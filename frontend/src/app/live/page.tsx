@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import io, { Socket } from "socket.io-client";
+import io from "socket.io-client";
 import { apiFetch } from "@/lib/api";
 
 type Team = {
@@ -32,10 +32,7 @@ type Match = {
   goals: Goal[];
 };
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE || "http://localhost:4000/api";
-const SOCKET_BASE =
-  process.env.NEXT_PUBLIC_SOCKET_BASE || "http://localhost:4000";
+const SOCKET_BASE = process.env.NEXT_PUBLIC_SOCKET_BASE || "http://localhost:4000";
 
 async function fetchLiveMatches(): Promise<Match[]> {
   return apiFetch<Match[]>("/matches/live");
@@ -46,22 +43,27 @@ export default function LivePage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let socket: Socket | undefined;
+    // Using ReturnType<typeof io> ensures proper TypeScript typing
+    let socket: ReturnType<typeof io> | undefined;
 
     async function init() {
       try {
-        const initial = await fetchLiveMatches();
-        setMatches(initial);
-      } catch {
-        // ignore for now
+        const initialMatches = await fetchLiveMatches();
+        setMatches(initialMatches);
+      } catch (err) {
+        console.error("Failed to fetch live matches:", err);
       } finally {
         setLoading(false);
       }
 
+      // Initialize socket
       socket = io(SOCKET_BASE, {
-        withCredentials: true,
+        transports: ["websocket"], // ensures WebSocket transport
+       // @ts-ignore
+        withCredentials: true,// works if server CORS allows credentials
       });
 
+      // Listen for match updates
       socket.on("matchUpdated", (updated: Match) => {
         setMatches((current) => {
           const exists = current.find((m) => m._id === updated._id);
@@ -78,10 +80,9 @@ export default function LivePage() {
 
     void init();
 
+    // Cleanup on unmount
     return () => {
-      if (socket) {
-        socket.disconnect();
-      }
+      if (socket) socket.disconnect();
     };
   }, []);
 
@@ -99,6 +100,7 @@ export default function LivePage() {
           Live via Socket.io
         </span>
       </div>
+
       <div className="card">
         {loading ? (
           <p className="muted">Loading live matches…</p>
@@ -134,11 +136,10 @@ export default function LivePage() {
                     <div className="hero-title">
                       {m.scoreA} : {m.scoreB}
                     </div>
-                    <div className="status-pill status-live mt-sm">
-                      LIVE
-                    </div>
+                    <div className="status-pill status-live mt-sm">LIVE</div>
                   </div>
                 </div>
+
                 {m.goals && m.goals.length > 0 && (
                   <div className="mt-md">
                     <div className="section-description">Goal scorers</div>
@@ -165,5 +166,3 @@ export default function LivePage() {
     </div>
   );
 }
-
-
