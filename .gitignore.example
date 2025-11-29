@@ -1,0 +1,29 @@
+# Example .gitignore - Copy this to understand what's ignored
+# This file is for reference only
+
+# Environment files - NEVER commit these!
+.env
+.env.local
+.env.*.local
+
+# Node modules
+node_modules/
+
+# Build outputs
+.next/
+out/
+dist/
+build/
+
+# Test files
+coverage/
+*.test-results.txt
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
