@@ -6,6 +6,7 @@ const cookieParser = require('cookie-parser');
 const dotenv = require('dotenv');
 const { Server } = require('socket.io');
 
+
 dotenv.config();
 
 const authRoutes = require('./src/routes/auth');
@@ -77,4 +78,22 @@ mongoose
     res.send("Backend running successfully.");
   });
   
-
+  async function createAdmin() {
+    const exists = await User.findOne({ email: "9probalsen@gmail.com" });
+    if (exists) {
+      console.log("Admin already exists");
+      return;
+    }
+  
+    const admin = new User({
+      username: "admin",
+      email: "9probalsen@gmail.com",
+      password: "Probal2004",
+      isAdmin: true
+    });
+  
+    await admin.save();
+    console.log("Admin created successfully");
+  }
+  
+  
