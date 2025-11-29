@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
 
 type Team = {
   _id: string;
@@ -37,12 +39,22 @@ type Match = {
   scoreA: number;
   scoreB: number;
   goals?: Goal[];
+  teamALineup?: {
+    goalkeeper?: string | Player;
+    players?: (string | Player)[];
+  };
+  teamBLineup?: {
+    goalkeeper?: string | Player;
+    players?: (string | Player)[];
+  };
   isPublished: boolean;
 };
 
 const DEPARTMENTS = ["CSE", "IT", "ECE", "EE", "CE", "AEIE"];
 
 export default function AdminDashboardPage() {
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const router = useRouter();
   const [teams, setTeams] = useState<Team[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
@@ -50,11 +62,30 @@ export default function AdminDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth <= 900);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
   const [showMatchForm, setShowMatchForm] = useState(false);
   const [showTeamForm, setShowTeamForm] = useState(false);
   const [showPlayerForm, setShowPlayerForm] = useState(false);
   const [editingMatch, setEditingMatch] = useState<Match | null>(null);
   const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
+  const [showLineupModal, setShowLineupModal] = useState(false);
+  const [matchForLineup, setMatchForLineup] = useState<Match | null>(null);
+  const [lineupData, setLineupData] = useState<{
+    teamA: { goalkeeper: string; players: string[] };
+    teamB: { goalkeeper: string; players: string[] };
+  }>({
+    teamA: { goalkeeper: "", players: [] },
+    teamB: { goalkeeper: "", players: [] },
+  });
   const [scoreForm, setScoreForm] = useState({
     scoreA: 0,
     scoreB: 0,
@@ -64,6 +95,13 @@ export default function AdminDashboardPage() {
     player: "",
     team: "",
     minute: "",
+  });
+  const [showAddGoal, setShowAddGoal] = useState(false);
+  const [showSubstitute, setShowSubstitute] = useState(false);
+  const [substituteForm, setSubstituteForm] = useState({
+    team: "",
+    playerOut: "",
+    playerIn: "",
   });
 
   // Match form state
@@ -87,11 +125,8 @@ export default function AdminDashboardPage() {
   // Player form state
   const [playerForm, setPlayerForm] = useState({
     name: "",
-    jerseyNumber: "",
     position: "",
     department: "CSE",
-    team: "",
-    photoUrl: "",
   });
 
   async function load() {
@@ -116,6 +151,11 @@ export default function AdminDashboardPage() {
   }
 
   function openScoreEditor(match: Match) {
+    // Only allow editing score for live matches
+    if (match.status !== "live") {
+      setError("You can only update scores and goals for live matches. Please set the match status to 'Live' first.");
+      return;
+    }
     setEditingMatch(match);
     setScoreForm({
       scoreA: match.scoreA,
@@ -149,12 +189,105 @@ export default function AdminDashboardPage() {
       minute: parseInt(newGoal.minute),
     };
     
+    // Automatically increase score by 1
+    const isTeamA = editingMatch.teamA._id === newGoal.team;
     setScoreForm({
       ...scoreForm,
       goals: [...scoreForm.goals, goal],
+      scoreA: isTeamA ? scoreForm.scoreA + 1 : scoreForm.scoreA,
+      scoreB: isTeamA ? scoreForm.scoreB : scoreForm.scoreB + 1,
     });
     setNewGoal({ player: "", team: "", minute: "" });
+    setShowAddGoal(false);
     setError(null);
+  }
+
+  async function makeSubstitution() {
+    if (!substituteForm.team || !substituteForm.playerOut || !substituteForm.playerIn) {
+      setError("Please select team, player going out, and player coming in.");
+      return;
+    }
+    if (!editingMatch) return;
+
+    try {
+      const isTeamA = editingMatch.teamA._id === substituteForm.team;
+      const lineupKey = isTeamA ? 'teamALineup' : 'teamBLineup';
+      const currentLineup = editingMatch[lineupKey] || { goalkeeper: null, players: [] };
+      
+      // Get current lineup IDs
+      const goalkeeperId = currentLineup.goalkeeper 
+        ? (typeof currentLineup.goalkeeper === 'object' 
+          ? currentLineup.goalkeeper._id 
+          : currentLineup.goalkeeper)
+        : null;
+      const playerIds = (currentLineup.players || []).map((p: any) => 
+        typeof p === 'object' ? p._id : p
+      );
+
+      // Remove player going out and add player coming in
+      let newGoalkeeper = goalkeeperId;
+      let newPlayers = [...playerIds];
+
+      if (goalkeeperId && substituteForm.playerOut === goalkeeperId) {
+        // Goalkeeper substitution
+        newGoalkeeper = substituteForm.playerIn;
+      } else {
+        // Field player substitution
+        newPlayers = newPlayers.filter((id) => id !== substituteForm.playerOut);
+        newPlayers.push(substituteForm.playerIn);
+      }
+
+      // Update the match with new lineup
+      await apiFetch(`/matches/${editingMatch._id}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          [lineupKey]: {
+            goalkeeper: newGoalkeeper,
+            players: newPlayers,
+          },
+        }),
+      });
+
+      setSubstituteForm({ team: "", playerOut: "", playerIn: "" });
+      setShowSubstitute(false);
+      await load();
+      setSuccess("Substitution made successfully!");
+    } catch (err: any) {
+      setError(err.message || "Failed to make substitution");
+    }
+  }
+
+  // Helper function to get players in current lineup
+  function getLineupPlayers(match: Match, teamId: string) {
+    const isTeamA = match.teamA._id === teamId;
+    const lineup = isTeamA ? match.teamALineup : match.teamBLineup;
+    if (!lineup) return [];
+
+    const goalkeeperId = lineup.goalkeeper
+      ? (typeof lineup.goalkeeper === 'object' 
+        ? lineup.goalkeeper._id 
+        : lineup.goalkeeper)
+      : null;
+    const playerIds = (lineup.players || []).map((p: any) => 
+      typeof p === 'object' ? p._id : p
+    );
+
+    const allLineupIds = goalkeeperId ? [goalkeeperId, ...playerIds] : playerIds;
+    return players.filter((p) => {
+      const pTeamId = typeof p.team === 'object' ? p.team._id : p.team;
+      return pTeamId === teamId && allLineupIds.includes(p._id);
+    });
+  }
+
+  // Helper function to get players NOT in current lineup
+  function getBenchPlayers(match: Match, teamId: string) {
+    const lineupPlayers = getLineupPlayers(match, teamId);
+    const lineupPlayerIds = lineupPlayers.map((p) => p._id);
+    
+    return players.filter((p) => {
+      const pTeamId = typeof p.team === 'object' ? p.team._id : p.team;
+      return pTeamId === teamId && !lineupPlayerIds.includes(p._id);
+    });
   }
 
   function removeGoal(index: number) {
@@ -187,8 +320,14 @@ export default function AdminDashboardPage() {
   }
 
   useEffect(() => {
-    void load();
-  }, []);
+    if (!authLoading && !isAuthenticated) {
+      router.push("/admin/login");
+      return;
+    }
+    if (isAuthenticated && !authLoading) {
+      void load();
+    }
+  }, [isAuthenticated, authLoading, router]);
 
   async function createMatch(e: React.FormEvent) {
     e.preventDefault();
@@ -251,23 +390,19 @@ export default function AdminDashboardPage() {
   function openPlayerForm(player?: Player) {
     if (player) {
       setEditingPlayer(player);
+      const teamId = typeof player.team === "object" ? player.team._id : player.team;
+      const selectedTeam = teams.find((t) => t._id === teamId);
       setPlayerForm({
         name: player.name,
-        jerseyNumber: player.jerseyNumber.toString(),
         position: player.position,
-        department: player.department,
-        team: typeof player.team === "object" ? player.team._id : player.team,
-        photoUrl: player.photoUrl || "",
+        department: selectedTeam?.department || player.department,
       });
     } else {
       setEditingPlayer(null);
       setPlayerForm({
         name: "",
-        jerseyNumber: "",
         position: "",
         department: "CSE",
-        team: "",
-        photoUrl: "",
       });
     }
     setShowPlayerForm(true);
@@ -276,28 +411,39 @@ export default function AdminDashboardPage() {
   async function savePlayer(e: React.FormEvent) {
     e.preventDefault();
     try {
+      // Find team by department
+      const team = teams.find((t) => t.department === playerForm.department);
+      if (!team) {
+        setError(`No team found for department ${playerForm.department}. Please create a team for this department first.`);
+        return;
+      }
+
+      // Validate that team._id exists
+      if (!team._id) {
+        setError(`Invalid team ID for department ${playerForm.department}. Please check the team configuration.`);
+        return;
+      }
+
+      const playerData = {
+        name: playerForm.name.trim(),
+        position: playerForm.position.trim(),
+        department: playerForm.department,
+        team: team._id,
+      };
+
+      console.log("Creating player with data:", playerData);
+      console.log("Selected team:", team);
+
       if (editingPlayer) {
         await apiFetch(`/players/${editingPlayer._id}`, {
           method: "PUT",
-          body: JSON.stringify({
-            name: playerForm.name,
-            jerseyNumber: parseInt(playerForm.jerseyNumber),
-            position: playerForm.position,
-            department: playerForm.department,
-            team: playerForm.team,
-            photoUrl: playerForm.photoUrl || undefined,
-          }),
+          body: JSON.stringify(playerData),
         });
       } else {
         await apiFetch("/players", {
           method: "POST",
           body: JSON.stringify({
-            name: playerForm.name,
-            jerseyNumber: parseInt(playerForm.jerseyNumber),
-            position: playerForm.position,
-            department: playerForm.department,
-            team: playerForm.team,
-            photoUrl: playerForm.photoUrl || undefined,
+            ...playerData,
             isPublished: false,
           }),
         });
@@ -306,15 +452,14 @@ export default function AdminDashboardPage() {
       setEditingPlayer(null);
       setPlayerForm({
         name: "",
-        jerseyNumber: "",
         position: "",
         department: "CSE",
-        team: "",
-        photoUrl: "",
       });
       await load();
       setSuccess(editingPlayer ? "Player updated successfully!" : "Player created successfully!");
     } catch (err: any) {
+      console.error("Error saving player:", err);
+      // apiFetch already extracts the error message from the response
       setError(err.message || "Failed to save player");
     }
   }
@@ -342,8 +487,24 @@ export default function AdminDashboardPage() {
     }
   }
 
-  async function toggleMatchStatus(matchId: string, status: Match["status"]) {
+  function openLineupModal(match: Match) {
+    setMatchForLineup(match);
+    setLineupData({
+      teamA: { goalkeeper: "", players: [] },
+      teamB: { goalkeeper: "", players: [] },
+    });
+    setShowLineupModal(true);
+  }
+
+  async function toggleMatchStatus(matchId: string, status: Match["status"], match?: Match) {
     try {
+      // If setting to live, show lineup modal first
+      if (status === "live" && match) {
+        openLineupModal(match);
+        return;
+      }
+
+      // For other statuses, update directly
       await apiFetch(`/matches/${matchId}/status`, {
         method: "POST",
         body: JSON.stringify({ status }),
@@ -351,6 +512,42 @@ export default function AdminDashboardPage() {
       await load();
     } catch (err: any) {
       setError(err.message || "Failed to update match status");
+    }
+  }
+
+  async function confirmLineupAndSetLive() {
+    if (!matchForLineup) return;
+
+    // Validate lineups
+    if (!lineupData.teamA.goalkeeper || lineupData.teamA.players.length !== 6) {
+      setError("Please select 1 goalkeeper and 6 players for Team A");
+      return;
+    }
+    if (!lineupData.teamB.goalkeeper || lineupData.teamB.players.length !== 6) {
+      setError("Please select 1 goalkeeper and 6 players for Team B");
+      return;
+    }
+
+    try {
+      setError(null);
+      await apiFetch(`/matches/${matchForLineup._id}/status`, {
+        method: "POST",
+        body: JSON.stringify({
+          status: "live",
+          teamALineup: lineupData.teamA,
+          teamBLineup: lineupData.teamB,
+        }),
+      });
+      setShowLineupModal(false);
+      setMatchForLineup(null);
+      setLineupData({
+        teamA: { goalkeeper: "", players: [] },
+        teamB: { goalkeeper: "", players: [] },
+      });
+      await load();
+      setSuccess("Match set to live with lineups!");
+    } catch (err: any) {
+      setError(err.message || "Failed to set match to live");
     }
   }
 
@@ -459,12 +656,37 @@ export default function AdminDashboardPage() {
     }
   }
 
+  if (authLoading) {
+    return (
+      <div className="stack gap-md">
+        <div className="section-header">
+          <div>
+            <h1 className="section-heading">Admin Dashboard</h1>
+            <p className="section-description">Loading...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return null; // Will redirect in useEffect
+  }
+
   return (
-    <div className="stack gap-md">
+    <div className="stack gap-md" style={{ padding: isMobile ? "0 0.75rem" : "0" }}>
       <div className="section-header">
         <div>
-          <h1 className="section-heading">Admin Dashboard</h1>
-          <p className="section-description">
+          <h1 
+            className="section-heading"
+            style={{ fontSize: "clamp(0.85rem, 4vw, 0.95rem)" }}
+          >
+            Admin Dashboard
+          </h1>
+          <p 
+            className="section-description"
+            style={{ fontSize: "clamp(0.75rem, 3vw, 0.8rem)" }}
+          >
             Manage teams, fixtures, control live status and approve the points table.
           </p>
         </div>
@@ -514,13 +736,18 @@ export default function AdminDashboardPage() {
               )}
             </div>
             <div className="stack gap-sm">
-              <div className="admin-section-title" style={{ fontSize: "0.875rem" }}>
+              <div className="admin-section-title" style={{ fontSize: "clamp(0.75rem, 3vw, 0.875rem)" }}>
                 Points Table
               </div>
               <button
                 className="btn btn-primary"
                 onClick={() => recalcPoints(true)}
                 disabled={loading}
+                style={{
+                  width: "100%",
+                  fontSize: "clamp(0.8rem, 3vw, 0.9rem)",
+                  padding: "0.6rem 1rem",
+                }}
               >
                 Recalculate & Publish
               </button>
@@ -528,6 +755,11 @@ export default function AdminDashboardPage() {
                 className="btn"
                 onClick={() => recalcPoints(false)}
                 disabled={loading}
+                style={{
+                  width: "100%",
+                  fontSize: "clamp(0.8rem, 3vw, 0.9rem)",
+                  padding: "0.6rem 1rem",
+                }}
               >
                 Recalculate Only
               </button>
@@ -535,7 +767,12 @@ export default function AdminDashboardPage() {
                 className="btn"
                 onClick={() => cleanupOrphanedEntries()}
                 disabled={loading}
-                style={{ marginTop: "0.5rem" }}
+                style={{ 
+                  marginTop: "0.5rem",
+                  width: "100%",
+                  fontSize: "clamp(0.8rem, 3vw, 0.9rem)",
+                  padding: "0.6rem 1rem",
+                }}
               >
                 Cleanup Orphaned Entries
               </button>
@@ -545,6 +782,11 @@ export default function AdminDashboardPage() {
                     className="btn"
                     onClick={() => publishPointsTable(true)}
                     disabled={loading}
+                    style={{
+                      width: "100%",
+                      fontSize: "clamp(0.8rem, 3vw, 0.9rem)",
+                      padding: "0.6rem 1rem",
+                    }}
                   >
                     Publish Table
                   </button>
@@ -552,6 +794,11 @@ export default function AdminDashboardPage() {
                     className="btn"
                     onClick={() => publishPointsTable(false)}
                     disabled={loading}
+                    style={{
+                      width: "100%",
+                      fontSize: "clamp(0.8rem, 3vw, 0.9rem)",
+                      padding: "0.6rem 1rem",
+                    }}
                   >
                     Hide Table
                   </button>
@@ -564,7 +811,15 @@ export default function AdminDashboardPage() {
             </div>
           </div>
         </aside>
-        <section className="admin-main">
+        <section 
+          className="admin-main"
+          style={{
+            width: isMobile ? "100%" : "auto",
+            order: isMobile ? 1 : 2,
+            flex: isMobile ? "none" : 1,
+            padding: isMobile ? "1rem 0.75rem" : "1rem 0.9rem",
+          }}
+        >
           {loading ? (
             <p className="muted">Loading data…</p>
           ) : (
@@ -749,77 +1004,305 @@ export default function AdminDashboardPage() {
                       )}
                     </div>
 
+                    {/* Action Buttons */}
                     <div className="field">
-                      <label>Add New Goal</label>
-                      <div className="stack gap-sm">
-                        <select
-                          className="input"
-                          value={newGoal.team}
-                          onChange={(e) =>
-                            setNewGoal({ ...newGoal, team: e.target.value })
-                          }
+                      <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+                        <button
+                          type="button"
+                          className="btn btn-primary"
+                          onClick={() => {
+                            setShowAddGoal(!showAddGoal);
+                            setShowSubstitute(false);
+                          }}
                         >
-                          <option value="">Select Team</option>
-                          <option value={editingMatch.teamA._id}>
-                            {editingMatch.teamA.name}
-                          </option>
-                          <option value={editingMatch.teamB._id}>
-                            {editingMatch.teamB.name}
-                          </option>
-                        </select>
-                        {newGoal.team && (
-                          <select
-                            className="input"
-                            value={newGoal.player}
-                            onChange={(e) =>
-                              setNewGoal({ ...newGoal, player: e.target.value })
-                            }
-                            required
-                          >
-                            <option value="">Select Player *</option>
-                            {players
-                              .filter((p) => {
-                                const teamId =
-                                  typeof p.team === "object" ? p.team._id : p.team;
-                                return teamId === newGoal.team;
-                              })
-                              .map((p) => (
-                                <option key={p._id} value={p._id}>
-                                  {p.name} (#{p.jerseyNumber}) - {p.position}
-                                </option>
-                              ))}
-                          </select>
-                        )}
-                        <div style={{ display: "flex", gap: "0.5rem" }}>
-                          <input
-                            className="input"
-                            type="number"
-                            min="0"
-                            max="120"
-                            placeholder="Minute"
-                            value={newGoal.minute}
-                            onChange={(e) =>
-                              setNewGoal({ ...newGoal, minute: e.target.value })
-                            }
-                            style={{ flex: 1 }}
-                          />
-                          <button
-                            type="button"
-                            className="btn"
-                            onClick={addGoal}
-                            disabled={!newGoal.team || !newGoal.minute || !newGoal.player}
-                          >
-                            Add Goal
-                          </button>
-                        </div>
+                          {showAddGoal ? "Cancel" : "Add Goal"}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-primary"
+                          onClick={() => {
+                            setShowSubstitute(!showSubstitute);
+                            setShowAddGoal(false);
+                          }}
+                        >
+                          {showSubstitute ? "Cancel" : "Substitute"}
+                        </button>
                       </div>
                     </div>
 
-                    <div className="flex-between mt-md">
+                    {/* Add Goal Section */}
+                    {showAddGoal && (
+                      <div className="field" style={{ border: "1px solid rgba(148, 163, 184, 0.3)", padding: "1rem", borderRadius: "0.5rem" }}>
+                        <label style={{ fontSize: "1rem", marginBottom: "0.75rem", display: "block" }}>
+                          Add Goal - Select Team and Scorer
+                        </label>
+                        <div className="stack gap-md">
+                          <select
+                            className="input"
+                            value={newGoal.team}
+                            onChange={(e) => {
+                              setNewGoal({ ...newGoal, team: e.target.value, player: "" });
+                            }}
+                          >
+                            <option value="">Select Team *</option>
+                            <option value={editingMatch.teamA._id}>
+                              {editingMatch.teamA.name}
+                            </option>
+                            <option value={editingMatch.teamB._id}>
+                              {editingMatch.teamB.name}
+                            </option>
+                          </select>
+                          
+                          {newGoal.team && (
+                            <>
+                              <label style={{ fontSize: "0.875rem", color: "var(--muted)" }}>
+                                Select Scorer (from playing 7):
+                              </label>
+                              <div
+                                style={{
+                                  display: "grid",
+                                  gridTemplateColumns: isMobile ? "1fr" : "repeat(2, 1fr)",
+                                  gap: "0.5rem",
+                                  maxHeight: "200px",
+                                  overflowY: "auto",
+                                  padding: "0.5rem",
+                                  background: "rgba(15, 23, 42, 0.5)",
+                                  borderRadius: "0.5rem",
+                                }}
+                              >
+                                {getLineupPlayers(editingMatch, newGoal.team).map((p) => {
+                                  const isSelected = newGoal.player === p._id;
+                                  const isGoalkeeper = (() => {
+                                    const isTeamA = editingMatch.teamA._id === newGoal.team;
+                                    const lineup = isTeamA ? editingMatch.teamALineup : editingMatch.teamBLineup;
+                                    if (!lineup) return false;
+                                    const gkId = typeof lineup.goalkeeper === 'object' 
+                                      ? lineup.goalkeeper._id 
+                                      : lineup.goalkeeper;
+                                    return p._id === gkId;
+                                  })();
+                                  
+                                  return (
+                                    <label
+                                      key={p._id}
+                                      style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: "0.5rem",
+                                        padding: "0.5rem",
+                                        background: isSelected ? "rgba(34, 197, 94, 0.2)" : "rgba(15, 23, 42, 0.9)",
+                                        border: isSelected ? "1px solid #22c55e" : "1px solid rgba(148, 163, 184, 0.4)",
+                                        borderRadius: "0.5rem",
+                                        cursor: "pointer",
+                                        fontSize: "0.875rem",
+                                      }}
+                                    >
+                                      <input
+                                        type="radio"
+                                        name="goal-scorer"
+                                        checked={isSelected}
+                                        onChange={() => setNewGoal({ ...newGoal, player: p._id })}
+                                      />
+                                      <span>
+                                        {p.name} - {p.position}
+                                        {isGoalkeeper && " (GK)"}
+                                      </span>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            </>
+                          )}
+
+                          <div style={{ display: "flex", gap: "0.5rem" }}>
+                            <input
+                              className="input"
+                              type="number"
+                              min="0"
+                              max="120"
+                              placeholder="Minute *"
+                              value={newGoal.minute}
+                              onChange={(e) =>
+                                setNewGoal({ ...newGoal, minute: e.target.value })
+                              }
+                              style={{ flex: 1 }}
+                            />
+                            <button
+                              type="button"
+                              className="btn btn-primary"
+                              onClick={addGoal}
+                              disabled={!newGoal.team || !newGoal.minute || !newGoal.player}
+                            >
+                              Add Goal
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Substitute Section */}
+                    {showSubstitute && (
+                      <div className="field" style={{ border: "1px solid rgba(148, 163, 184, 0.3)", padding: "1rem", borderRadius: "0.5rem" }}>
+                        <label style={{ fontSize: "1rem", marginBottom: "0.75rem", display: "block" }}>
+                          Make Substitution
+                        </label>
+                        <div className="stack gap-md">
+                          <select
+                            className="input"
+                            value={substituteForm.team}
+                            onChange={(e) => {
+                              setSubstituteForm({ ...substituteForm, team: e.target.value, playerOut: "", playerIn: "" });
+                            }}
+                          >
+                            <option value="">Select Team *</option>
+                            <option value={editingMatch.teamA._id}>
+                              {editingMatch.teamA.name}
+                            </option>
+                            <option value={editingMatch.teamB._id}>
+                              {editingMatch.teamB.name}
+                            </option>
+                          </select>
+
+                          {substituteForm.team && (
+                            <>
+                              <div>
+                                <label style={{ fontSize: "0.875rem", color: "var(--muted)", marginBottom: "0.5rem", display: "block" }}>
+                                  Player Going Out (from playing 7):
+                                </label>
+                                <div
+                                  style={{
+                                    display: "grid",
+                                    gridTemplateColumns: isMobile ? "1fr" : "repeat(2, 1fr)",
+                                    gap: "0.5rem",
+                                    maxHeight: "200px",
+                                    overflowY: "auto",
+                                    padding: "0.5rem",
+                                    background: "rgba(15, 23, 42, 0.5)",
+                                    borderRadius: "0.5rem",
+                                  }}
+                                >
+                                  {getLineupPlayers(editingMatch, substituteForm.team).map((p) => {
+                                    const isSelected = substituteForm.playerOut === p._id;
+                                    const isGoalkeeper = (() => {
+                                      const isTeamA = editingMatch.teamA._id === substituteForm.team;
+                                      const lineup = isTeamA ? editingMatch.teamALineup : editingMatch.teamBLineup;
+                                      if (!lineup) return false;
+                                      const gkId = typeof lineup.goalkeeper === 'object' 
+                                        ? lineup.goalkeeper._id 
+                                        : lineup.goalkeeper;
+                                      return p._id === gkId;
+                                    })();
+                                    
+                                    return (
+                                      <label
+                                        key={p._id}
+                                        style={{
+                                          display: "flex",
+                                          alignItems: "center",
+                                          gap: "0.5rem",
+                                          padding: "0.5rem",
+                                          background: isSelected ? "rgba(239, 68, 68, 0.2)" : "rgba(15, 23, 42, 0.9)",
+                                          border: isSelected ? "1px solid #ef4444" : "1px solid rgba(148, 163, 184, 0.4)",
+                                          borderRadius: "0.5rem",
+                                          cursor: "pointer",
+                                          fontSize: "0.875rem",
+                                        }}
+                                      >
+                                        <input
+                                          type="radio"
+                                          name="player-out"
+                                          checked={isSelected}
+                                          onChange={() => setSubstituteForm({ ...substituteForm, playerOut: p._id, playerIn: "" })}
+                                        />
+                                        <span>
+                                          {p.name} - {p.position}
+                                          {isGoalkeeper && " (GK)"}
+                                        </span>
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+
+                              {substituteForm.playerOut && (
+                                <div>
+                                  <label style={{ fontSize: "0.875rem", color: "var(--muted)", marginBottom: "0.5rem", display: "block" }}>
+                                    Player Coming In (from bench):
+                                  </label>
+                                  <div
+                                    style={{
+                                      display: "grid",
+                                      gridTemplateColumns: isMobile ? "1fr" : "repeat(2, 1fr)",
+                                      gap: "0.5rem",
+                                      maxHeight: "200px",
+                                      overflowY: "auto",
+                                      padding: "0.5rem",
+                                      background: "rgba(15, 23, 42, 0.5)",
+                                      borderRadius: "0.5rem",
+                                    }}
+                                  >
+                                    {getBenchPlayers(editingMatch, substituteForm.team).map((p) => {
+                                      const isSelected = substituteForm.playerIn === p._id;
+                                      return (
+                                        <label
+                                          key={p._id}
+                                          style={{
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: "0.5rem",
+                                            padding: "0.5rem",
+                                            background: isSelected ? "rgba(34, 197, 94, 0.2)" : "rgba(15, 23, 42, 0.9)",
+                                            border: isSelected ? "1px solid #22c55e" : "1px solid rgba(148, 163, 184, 0.4)",
+                                            borderRadius: "0.5rem",
+                                            cursor: "pointer",
+                                            fontSize: "0.875rem",
+                                          }}
+                                        >
+                                          <input
+                                            type="radio"
+                                            name="player-in"
+                                            checked={isSelected}
+                                            onChange={() => setSubstituteForm({ ...substituteForm, playerIn: p._id })}
+                                          />
+                                          <span>
+                                            {p.name} - {p.position}
+                                          </span>
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              )}
+
+                              <button
+                                type="button"
+                                className="btn btn-primary"
+                                onClick={makeSubstitution}
+                                disabled={!substituteForm.team || !substituteForm.playerOut || !substituteForm.playerIn}
+                              >
+                                Make Substitution
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    <div 
+                      className="flex-between mt-md"
+                      style={{
+                        flexDirection: isMobile ? "column" : "row",
+                        gap: "0.75rem",
+                      }}
+                    >
                       <button
                         type="button"
                         className="btn btn-primary"
                         onClick={saveScore}
+                        style={{
+                          width: isMobile ? "100%" : "auto",
+                          order: isMobile ? 2 : 1,
+                        }}
                       >
                         Save Score & Goals
                       </button>
@@ -827,6 +1310,10 @@ export default function AdminDashboardPage() {
                         type="button"
                         className="btn"
                         onClick={() => setEditingMatch(null)}
+                        style={{
+                          width: isMobile ? "100%" : "auto",
+                          order: isMobile ? 1 : 2,
+                        }}
                       >
                         Cancel
                       </button>
@@ -865,118 +1352,62 @@ export default function AdminDashboardPage() {
                         required
                       />
                     </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
-                      <div className="field">
-                        <label htmlFor="player-jersey">Jersey Number *</label>
-                        <input
-                          id="player-jersey"
-                          className="input"
-                          type="number"
-                          min="1"
-                          max="99"
-                          value={playerForm.jerseyNumber}
-                          onChange={(e) =>
-                            setPlayerForm({
-                              ...playerForm,
-                              jerseyNumber: e.target.value,
-                            })
-                          }
-                          required
-                        />
-                      </div>
-                      <div className="field">
-                        <label htmlFor="player-position">Position *</label>
-                        <input
-                          id="player-position"
-                          className="input"
-                          type="text"
-                          placeholder="e.g., Forward, Midfielder, Defender, Goalkeeper"
-                          value={playerForm.position}
-                          onChange={(e) =>
-                            setPlayerForm({
-                              ...playerForm,
-                              position: e.target.value,
-                            })
-                          }
-                          required
-                        />
-                      </div>
-                    </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
-                      <div className="field">
-                        <label htmlFor="player-department">Department *</label>
-                        <select
-                          id="player-department"
-                          className="input"
-                          value={playerForm.department}
-                          onChange={(e) =>
-                            setPlayerForm({
-                              ...playerForm,
-                              department: e.target.value,
-                            })
-                          }
-                          required
-                        >
-                          {DEPARTMENTS.map((dept) => (
-                            <option key={dept} value={dept}>
-                              {dept}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="field">
-                        <label htmlFor="player-team">Team *</label>
-                        <select
-                          id="player-team"
-                          className="input"
-                          value={playerForm.team}
-                          onChange={(e) =>
-                            setPlayerForm({ ...playerForm, team: e.target.value })
-                          }
-                          required
-                        >
-                          <option value="">Select Team</option>
-                          {teams.map((team) => (
-                            <option key={team._id} value={team._id}>
-                              {team.name} ({team.department})
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                    <div className="field">
+                      <label htmlFor="player-department">Department *</label>
+                      <select
+                        id="player-department"
+                        className="input"
+                        value={playerForm.department}
+                        onChange={(e) =>
+                          setPlayerForm({
+                            ...playerForm,
+                            department: e.target.value,
+                          })
+                        }
+                        required
+                      >
+                        {DEPARTMENTS.map((dept) => (
+                          <option key={dept} value={dept}>
+                            {dept}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="muted" style={{ fontSize: "0.75rem", marginTop: "0.25rem" }}>
+                        Player will be assigned to the team from this department
+                      </p>
                     </div>
                     <div className="field">
-                      <label htmlFor="player-photo">Photo URL (optional)</label>
+                      <label htmlFor="player-position">Position *</label>
                       <input
-                        id="player-photo"
+                        id="player-position"
                         className="input"
-                        type="url"
-                        placeholder="https://example.com/photo.jpg"
-                        value={playerForm.photoUrl}
+                        type="text"
+                        placeholder="e.g., Forward, Midfielder, Defender, Goalkeeper"
+                        value={playerForm.position}
                         onChange={(e) =>
-                          setPlayerForm({ ...playerForm, photoUrl: e.target.value })
+                          setPlayerForm({
+                            ...playerForm,
+                            position: e.target.value,
+                          })
                         }
+                        required
                       />
-                      {playerForm.photoUrl && (
-                        <div style={{ marginTop: "0.5rem" }}>
-                          <img
-                            src={playerForm.photoUrl}
-                            alt="Player preview"
-                            style={{
-                              maxWidth: "150px",
-                              maxHeight: "150px",
-                              objectFit: "cover",
-                              borderRadius: "8px",
-                              border: "1px solid #ccc",
-                            }}
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).style.display = "none";
-                            }}
-                          />
-                        </div>
-                      )}
                     </div>
-                    <div className="flex-between">
-                      <button type="submit" className="btn btn-primary">
+                    <div 
+                      className="flex-between"
+                      style={{
+                        flexDirection: isMobile ? "column" : "row",
+                        gap: "0.75rem",
+                      }}
+                    >
+                      <button 
+                        type="submit" 
+                        className="btn btn-primary"
+                        style={{
+                          width: isMobile ? "100%" : "auto",
+                          order: isMobile ? 2 : 1,
+                        }}
+                      >
                         {editingPlayer ? "Update Player" : "Create Player"}
                       </button>
                       <button
@@ -985,6 +1416,10 @@ export default function AdminDashboardPage() {
                         onClick={() => {
                           setShowPlayerForm(false);
                           setEditingPlayer(null);
+                        }}
+                        style={{
+                          width: isMobile ? "100%" : "auto",
+                          order: isMobile ? 1 : 2,
                         }}
                       >
                         Cancel
@@ -1083,14 +1518,31 @@ export default function AdminDashboardPage() {
                         <option value="completed">Completed</option>
                       </select>
                     </div>
-                    <div className="flex-between">
-                      <button type="submit" className="btn btn-primary">
+                    <div 
+                      className="flex-between"
+                      style={{
+                        flexDirection: isMobile ? "column" : "row",
+                        gap: "0.75rem",
+                      }}
+                    >
+                      <button 
+                        type="submit" 
+                        className="btn btn-primary"
+                        style={{
+                          width: isMobile ? "100%" : "auto",
+                          order: isMobile ? 2 : 1,
+                        }}
+                      >
                         Create Match
                       </button>
                       <button
                         type="button"
                         className="btn"
                         onClick={() => setShowMatchForm(false)}
+                        style={{
+                          width: isMobile ? "100%" : "auto",
+                          order: isMobile ? 1 : 2,
+                        }}
                       >
                         Cancel
                       </button>
@@ -1109,16 +1561,16 @@ export default function AdminDashboardPage() {
                 {matches.length === 0 ? (
                   <p className="muted mt-sm">No matches created yet. Create one above.</p>
                 ) : (
-                  <div className="scroll-y mt-sm">
+                  <div className="scroll-y mt-sm" style={{ overflowX: "auto" }}>
                     <table className="table">
                       <thead>
                         <tr>
-                          <th>Match</th>
-                          <th>Kickoff</th>
-                          <th>Status</th>
-                          <th>Score</th>
-                          <th>Publish</th>
-                          <th>Actions</th>
+                          <th style={{ fontSize: isMobile ? "0.7rem" : "0.78rem" }}>Match</th>
+                          <th style={{ fontSize: isMobile ? "0.7rem" : "0.78rem", display: isMobile ? "none" : "table-cell" }}>Kickoff</th>
+                          <th style={{ fontSize: isMobile ? "0.7rem" : "0.78rem" }}>Status</th>
+                          <th style={{ fontSize: isMobile ? "0.7rem" : "0.78rem" }}>Score</th>
+                          <th style={{ fontSize: isMobile ? "0.7rem" : "0.78rem" }}>Publish</th>
+                          <th style={{ fontSize: isMobile ? "0.7rem" : "0.78rem" }}>Actions</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1133,7 +1585,10 @@ export default function AdminDashboardPage() {
                                 {m.teamA.department} vs {m.teamB.department}
                               </div>
                             </td>
-                            <td className="muted">
+                            <td 
+                              className="muted"
+                              style={{ display: isMobile ? "none" : "table-cell" }}
+                            >
                               {new Date(m.date).toLocaleString()}
                             </td>
                             <td>
@@ -1145,34 +1600,54 @@ export default function AdminDashboardPage() {
                                       ? "status-completed"
                                       : "status-upcoming"
                                 }`}
+                                style={{ fontSize: isMobile ? "0.65rem" : "0.7rem" }}
                               >
                                 {m.status.toUpperCase()}
                               </span>
                             </td>
-                            <td>
+                            <td style={{ fontSize: isMobile ? "0.75rem" : "0.8rem" }}>
                               {m.scoreA} : {m.scoreB}
                             </td>
                             <td>
-                              <span className="badge">
+                              <span className="badge" style={{ fontSize: isMobile ? "0.65rem" : "0.7rem" }}>
                                 {m.isPublished ? "Published" : "Hidden"}
                               </span>
                             </td>
                             <td>
                               <div className="stack gap-sm">
-                                <div className="flex-between">
+                                <div 
+                                  className="flex-between"
+                                  style={{
+                                    flexDirection: isMobile ? "column" : "row",
+                                    gap: "0.5rem",
+                                    flexWrap: "wrap",
+                                  }}
+                                >
                                   <button
                                     className="btn"
                                     onClick={() =>
                                       toggleMatchStatus(m._id, "upcoming")
                                     }
+                                    style={{
+                                      fontSize: isMobile ? "0.7rem" : "0.8rem",
+                                      padding: isMobile ? "0.4rem 0.6rem" : "0.5rem 0.9rem",
+                                      flex: isMobile ? "1 1 auto" : "none",
+                                      minWidth: isMobile ? "80px" : "auto",
+                                    }}
                                   >
                                     Upcoming
                                   </button>
                                   <button
                                     className="btn"
                                     onClick={() =>
-                                      toggleMatchStatus(m._id, "live")
+                                      toggleMatchStatus(m._id, "live", m)
                                     }
+                                    style={{
+                                      fontSize: isMobile ? "0.7rem" : "0.8rem",
+                                      padding: isMobile ? "0.4rem 0.6rem" : "0.5rem 0.9rem",
+                                      flex: isMobile ? "1 1 auto" : "none",
+                                      minWidth: isMobile ? "80px" : "auto",
+                                    }}
                                   >
                                     Live
                                   </button>
@@ -1181,22 +1656,60 @@ export default function AdminDashboardPage() {
                                     onClick={() =>
                                       toggleMatchStatus(m._id, "completed")
                                     }
+                                    style={{
+                                      fontSize: isMobile ? "0.7rem" : "0.8rem",
+                                      padding: isMobile ? "0.4rem 0.6rem" : "0.5rem 0.9rem",
+                                      flex: isMobile ? "1 1 auto" : "none",
+                                      minWidth: isMobile ? "80px" : "auto",
+                                    }}
                                   >
                                     Completed
                                   </button>
                                 </div>
-                                <div className="flex-between">
-                                  <button
-                                    className="btn btn-primary"
-                                    onClick={() => openScoreEditor(m)}
-                                  >
-                                    Update Score & Goals
-                                  </button>
+                                <div 
+                                  className="flex-between"
+                                  style={{
+                                    flexDirection: isMobile ? "column" : "row",
+                                    gap: "0.5rem",
+                                    flexWrap: "wrap",
+                                  }}
+                                >
+                                  {m.status === "live" ? (
+                                    <button
+                                      className="btn btn-primary"
+                                      onClick={() => openScoreEditor(m)}
+                                      style={{
+                                        fontSize: isMobile ? "0.7rem" : "0.8rem",
+                                        padding: isMobile ? "0.4rem 0.6rem" : "0.5rem 0.9rem",
+                                        flex: isMobile ? "1 1 auto" : "none",
+                                        minWidth: isMobile ? "120px" : "auto",
+                                      }}
+                                    >
+                                      Update Score & Goals
+                                    </button>
+                                  ) : (
+                                    <span 
+                                      className="muted" 
+                                      style={{ 
+                                        fontSize: isMobile ? "0.65rem" : "0.75rem",
+                                        fontStyle: "italic",
+                                        padding: "0.5rem",
+                                      }}
+                                    >
+                                      Set to Live to update scores
+                                    </span>
+                                  )}
                                   <button
                                     className="btn"
                                     onClick={() =>
                                       publishMatch(m._id, !m.isPublished)
                                     }
+                                    style={{
+                                      fontSize: isMobile ? "0.7rem" : "0.8rem",
+                                      padding: isMobile ? "0.4rem 0.6rem" : "0.5rem 0.9rem",
+                                      flex: isMobile ? "1 1 auto" : "none",
+                                      minWidth: isMobile ? "100px" : "auto",
+                                    }}
                                   >
                                     {m.isPublished ? "Hide from public" : "Publish"}
                                   </button>
@@ -1206,6 +1719,10 @@ export default function AdminDashboardPage() {
                                     style={{
                                       background: "#ef4444",
                                       color: "white",
+                                      fontSize: isMobile ? "0.7rem" : "0.8rem",
+                                      padding: isMobile ? "0.4rem 0.6rem" : "0.5rem 0.9rem",
+                                      flex: isMobile ? "1 1 auto" : "none",
+                                      minWidth: isMobile ? "80px" : "auto",
                                     }}
                                   >
                                     Delete
@@ -1472,6 +1989,351 @@ export default function AdminDashboardPage() {
           )}
         </section>
       </div>
+
+      {/* Lineup Selection Modal */}
+      {showLineupModal && matchForLineup && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(0, 0, 0, 0.7)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 2000,
+            padding: isMobile ? "1rem" : "2rem",
+            overflow: "auto",
+          }}
+          onClick={() => {
+            setShowLineupModal(false);
+            setMatchForLineup(null);
+          }}
+        >
+          <div
+            className="card"
+            style={{
+              maxWidth: isMobile ? "100%" : "900px",
+              width: "100%",
+              maxHeight: "90vh",
+              overflow: "auto",
+              position: "relative",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex-between mb-md">
+              <h2 className="admin-section-title">
+                Select Starting Lineup: {matchForLineup.teamA.name} vs {matchForLineup.teamB.name}
+              </h2>
+              <button
+                className="btn"
+                onClick={() => {
+                  setShowLineupModal(false);
+                  setMatchForLineup(null);
+                }}
+                style={{
+                  background: "none",
+                  border: "none",
+                  fontSize: "1.5rem",
+                  cursor: "pointer",
+                  color: "#6b7280",
+                  padding: "0.5rem",
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="stack gap-lg">
+              {/* Team A Lineup */}
+              <div>
+                <h3 style={{ fontSize: "1rem", marginBottom: "1rem", color: "#e5e7eb" }}>
+                  {matchForLineup.teamA.name} - Select 1 Goalkeeper + 6 Players
+                </h3>
+                <div className="stack gap-md">
+                  <div>
+                    <label style={{ fontSize: "0.875rem", color: "var(--muted)", marginBottom: "0.5rem", display: "block" }}>
+                      Goalkeeper *
+                    </label>
+                    <select
+                      className="input"
+                      value={lineupData.teamA.goalkeeper}
+                      onChange={(e) => {
+                        const newGoalkeeper = e.target.value;
+                        setLineupData({
+                          ...lineupData,
+                          teamA: {
+                            ...lineupData.teamA,
+                            goalkeeper: newGoalkeeper,
+                            players: lineupData.teamA.players.filter((id) => id !== newGoalkeeper),
+                          },
+                        });
+                      }}
+                      style={{ width: "100%" }}
+                    >
+                      <option value="">Select Goalkeeper</option>
+                      {players
+                        .filter(
+                          (p) =>
+                            typeof p.team === "object"
+                              ? p.team._id === matchForLineup.teamA._id
+                              : p.team === matchForLineup.teamA._id
+                        )
+                        .filter((p) => !lineupData.teamA.players.includes(p._id))
+                        .map((p) => (
+                          <option key={p._id} value={p._id}>
+                            #{p.jerseyNumber} {p.name} - {p.position}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: "0.875rem", color: "var(--muted)", marginBottom: "0.5rem", display: "block" }}>
+                      Players (Select 6) - {lineupData.teamA.players.length}/6
+                    </label>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: isMobile ? "1fr" : "repeat(2, 1fr)",
+                        gap: "0.5rem",
+                        maxHeight: "300px",
+                        overflowY: "auto",
+                        padding: "0.5rem",
+                        background: "rgba(15, 23, 42, 0.5)",
+                        borderRadius: "0.5rem",
+                      }}
+                    >
+                      {players
+                        .filter(
+                          (p) =>
+                            typeof p.team === "object"
+                              ? p.team._id === matchForLineup.teamA._id
+                              : p.team === matchForLineup.teamA._id
+                        )
+                        .filter((p) => p._id !== lineupData.teamA.goalkeeper)
+                        .map((p) => {
+                          const isSelected = lineupData.teamA.players.includes(p._id);
+                          return (
+                            <label
+                              key={p._id}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "0.5rem",
+                                padding: "0.5rem",
+                                background: isSelected ? "rgba(34, 197, 94, 0.2)" : "rgba(15, 23, 42, 0.9)",
+                                border: isSelected ? "1px solid #22c55e" : "1px solid rgba(148, 163, 184, 0.4)",
+                                borderRadius: "0.5rem",
+                                cursor: "pointer",
+                                fontSize: "0.875rem",
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    if (lineupData.teamA.players.length < 6) {
+                                      setLineupData({
+                                        ...lineupData,
+                                        teamA: {
+                                          ...lineupData.teamA,
+                                          players: [...lineupData.teamA.players, p._id],
+                                          goalkeeper: lineupData.teamA.goalkeeper === p._id ? "" : lineupData.teamA.goalkeeper,
+                                        },
+                                      });
+                                    }
+                                  } else {
+                                    setLineupData({
+                                      ...lineupData,
+                                      teamA: {
+                                        ...lineupData.teamA,
+                                        players: lineupData.teamA.players.filter((id) => id !== p._id),
+                                      },
+                                    });
+                                  }
+                                }}
+                                disabled={!isSelected && (lineupData.teamA.players.length >= 6 || p._id === lineupData.teamA.goalkeeper)}
+                              />
+                              <span>
+                                #{p.jerseyNumber} {p.name} - {p.position}
+                              </span>
+                            </label>
+                          );
+                        })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Team B Lineup */}
+              <div>
+                <h3 style={{ fontSize: "1rem", marginBottom: "1rem", color: "#e5e7eb" }}>
+                  {matchForLineup.teamB.name} - Select 1 Goalkeeper + 6 Players
+                </h3>
+                <div className="stack gap-md">
+                  <div>
+                    <label style={{ fontSize: "0.875rem", color: "var(--muted)", marginBottom: "0.5rem", display: "block" }}>
+                      Goalkeeper *
+                    </label>
+                    <select
+                      className="input"
+                      value={lineupData.teamB.goalkeeper}
+                      onChange={(e) => {
+                        const newGoalkeeper = e.target.value;
+                        setLineupData({
+                          ...lineupData,
+                          teamB: {
+                            ...lineupData.teamB,
+                            goalkeeper: newGoalkeeper,
+                            players: lineupData.teamB.players.filter((id) => id !== newGoalkeeper),
+                          },
+                        });
+                      }}
+                      style={{ width: "100%" }}
+                    >
+                      <option value="">Select Goalkeeper</option>
+                      {players
+                        .filter(
+                          (p) =>
+                            typeof p.team === "object"
+                              ? p.team._id === matchForLineup.teamB._id
+                              : p.team === matchForLineup.teamB._id
+                        )
+                        .filter((p) => !lineupData.teamB.players.includes(p._id))
+                        .map((p) => (
+                          <option key={p._id} value={p._id}>
+                            #{p.jerseyNumber} {p.name} - {p.position}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: "0.875rem", color: "var(--muted)", marginBottom: "0.5rem", display: "block" }}>
+                      Players (Select 6) - {lineupData.teamB.players.length}/6
+                    </label>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: isMobile ? "1fr" : "repeat(2, 1fr)",
+                        gap: "0.5rem",
+                        maxHeight: "300px",
+                        overflowY: "auto",
+                        padding: "0.5rem",
+                        background: "rgba(15, 23, 42, 0.5)",
+                        borderRadius: "0.5rem",
+                      }}
+                    >
+                      {players
+                        .filter(
+                          (p) =>
+                            typeof p.team === "object"
+                              ? p.team._id === matchForLineup.teamB._id
+                              : p.team === matchForLineup.teamB._id
+                        )
+                        .filter((p) => p._id !== lineupData.teamB.goalkeeper)
+                        .map((p) => {
+                          const isSelected = lineupData.teamB.players.includes(p._id);
+                          return (
+                            <label
+                              key={p._id}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "0.5rem",
+                                padding: "0.5rem",
+                                background: isSelected ? "rgba(34, 197, 94, 0.2)" : "rgba(15, 23, 42, 0.9)",
+                                border: isSelected ? "1px solid #22c55e" : "1px solid rgba(148, 163, 184, 0.4)",
+                                borderRadius: "0.5rem",
+                                cursor: "pointer",
+                                fontSize: "0.875rem",
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    if (lineupData.teamB.players.length < 6) {
+                                      setLineupData({
+                                        ...lineupData,
+                                        teamB: {
+                                          ...lineupData.teamB,
+                                          players: [...lineupData.teamB.players, p._id],
+                                          goalkeeper: lineupData.teamB.goalkeeper === p._id ? "" : lineupData.teamB.goalkeeper,
+                                        },
+                                      });
+                                    }
+                                  } else {
+                                    setLineupData({
+                                      ...lineupData,
+                                      teamB: {
+                                        ...lineupData.teamB,
+                                        players: lineupData.teamB.players.filter((id) => id !== p._id),
+                                      },
+                                    });
+                                  }
+                                }}
+                                disabled={!isSelected && (lineupData.teamB.players.length >= 6 || p._id === lineupData.teamB.goalkeeper)}
+                              />
+                              <span>
+                                #{p.jerseyNumber} {p.name} - {p.position}
+                              </span>
+                            </label>
+                          );
+                        })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div
+                className="flex-between"
+                style={{
+                  flexDirection: isMobile ? "column" : "row",
+                  gap: "0.75rem",
+                  marginTop: "1rem",
+                  paddingTop: "1rem",
+                  borderTop: "1px solid rgba(148, 163, 184, 0.2)",
+                }}
+              >
+                <button
+                  className="btn"
+                  onClick={() => {
+                    setShowLineupModal(false);
+                    setMatchForLineup(null);
+                  }}
+                  style={{
+                    width: isMobile ? "100%" : "auto",
+                    order: isMobile ? 1 : 2,
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="btn btn-primary"
+                  onClick={confirmLineupAndSetLive}
+                  disabled={
+                    !lineupData.teamA.goalkeeper ||
+                    lineupData.teamA.players.length !== 6 ||
+                    !lineupData.teamB.goalkeeper ||
+                    lineupData.teamB.players.length !== 6
+                  }
+                  style={{
+                    width: isMobile ? "100%" : "auto",
+                    order: isMobile ? 2 : 1,
+                  }}
+                >
+                  Confirm Lineup & Set Live
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -32,6 +32,8 @@ router.get('/all', auth, async (req, res) => {
 router.post('/', auth, async (req, res) => {
   try {
     const team = await Team.create(req.body);
+    const io = req.app.get('io');
+    io.emit('teamUpdated', { action: 'created', team });
     res.status(201).json(team);
   } catch (err) {
     console.error(err);
@@ -43,6 +45,8 @@ router.post('/', auth, async (req, res) => {
 router.put('/:id', auth, async (req, res) => {
   try {
     const team = await Team.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const io = req.app.get('io');
+    io.emit('teamUpdated', { action: 'updated', team });
     res.json(team);
   } catch (err) {
     console.error(err);
@@ -64,6 +68,9 @@ router.delete('/:id', auth, async (req, res) => {
     // Delete the team itself
     await Team.findByIdAndDelete(teamId);
     
+    const io = req.app.get('io');
+    io.emit('teamUpdated', { action: 'deleted', teamId });
+    
     res.status(204).end();
   } catch (err) {
     console.error(err);
@@ -80,6 +87,8 @@ router.post('/:id/publish', auth, async (req, res) => {
       { isPublished: !!isPublished },
       { new: true }
     );
+    const io = req.app.get('io');
+    io.emit('teamUpdated', { action: 'published', team });
     res.json(team);
   } catch (err) {
     console.error(err);

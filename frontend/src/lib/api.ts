@@ -6,7 +6,11 @@ export async function apiFetch<T>(
   options: RequestInit = {},
 ): Promise<T> {
   try {
-    const res = await fetch(`${API_BASE}${path}`, {
+    // Normalize path: ensure no double slashes
+    const base = API_BASE.endsWith('/') ? API_BASE.slice(0, -1) : API_BASE;
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    const url = `${base}${normalizedPath}`;
+    const res = await fetch(url, {
       ...options,
       credentials: "include",
       headers: {
@@ -17,8 +21,27 @@ export async function apiFetch<T>(
     });
 
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error(data.message || `Request failed with ${res.status}`);
+      let errorMessage = `Request failed with ${res.status}`;
+      try {
+        const data = await res.json();
+        errorMessage = data.message || data.error || errorMessage;
+        // Log the full error for debugging
+        console.error('API Error Response:', {
+          status: res.status,
+          statusText: res.statusText,
+          data: data
+        });
+      } catch (parseError) {
+        // If JSON parsing fails, try to get text
+        const text = await res.text().catch(() => '');
+        errorMessage = text || errorMessage;
+        console.error('API Error (non-JSON):', {
+          status: res.status,
+          statusText: res.statusText,
+          text: text
+        });
+      }
+      throw new Error(errorMessage);
     }
 
     // Handle 204 No Content responses (common for DELETE requests)
