@@ -16,8 +16,9 @@ export default function AdminLoginPage() {
     setError(null);
     try {
       await login(email, password);
-    } catch (err: any) {
-      setError(err.message || "Login failed");
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      setError(error.message || "Login failed");
     } finally {
       setSubmitting(false);
     }
@@ -72,5 +73,3 @@ export default function AdminLoginPage() {
     </div>
   );
 }
-
-

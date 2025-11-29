@@ -1,9 +1,12 @@
 const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE || "https://uit-football-tournament.onrender.com/api/";
+  process.env.NEXT_PUBLIC_API_BASE ||
+  (typeof window !== "undefined" && window.location.hostname === "localhost"
+    ? "http://localhost:4000/api"
+    : "https://uit-football-tournament.onrender.com/api");
 
 export async function apiFetch<T>(
   path: string,
-  options: RequestInit = {},
+  options: RequestInit = {}
 ): Promise<T> {
   try {
     const res = await fetch(`${API_BASE}${path}`, {
@@ -49,5 +52,3 @@ export async function apiFetch<T>(
     throw error;
   }
 }
-
-

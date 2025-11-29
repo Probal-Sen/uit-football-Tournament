@@ -17,6 +17,7 @@ const pointsRoutes = require("./src/routes/points");
 
 // MODELS
 const User = require("./src/models/User");
+const Admin = require("./src/models/Admin");
 
 const app = express();
 const server = http.createServer(app);
@@ -28,7 +29,9 @@ const allowedOrigins = [
   "http://localhost:3001",
   "https://uit-football-tournament.vercel.app",
   "https://uit-football-tournament.vercel.app/",
-].filter(Boolean).map(origin => origin.replace(/\/$/, "")); // Remove trailing slashes
+]
+  .filter(Boolean)
+  .map((origin) => origin.replace(/\/$/, "")); // Remove trailing slashes
 
 // SOCKET.IO
 const io = new Server(server, {
@@ -77,20 +80,18 @@ app.get("/", (req, res) => {
 // AUTO ADMIN CREATOR
 async function createAdmin() {
   try {
-    const exists = await User.findOne({ email: "9probalsen@gmail.com" });
+    const exists = await Admin.findOne({ email: "9probalsen@gmail.com" });
     if (exists) {
       console.log("Admin already exists");
       return;
     }
 
-    const admin = new User({
-      username: "admin",
+    const passwordHash = await Admin.hashPassword("Probal2004");
+    await Admin.create({
       email: "9probalsen@gmail.com",
-      password: "Probal2004",
-      isAdmin: true,
+      passwordHash: passwordHash,
+      name: "Tournament Admin",
     });
-
-    await admin.save();
     console.log("Admin created successfully");
   } catch (err) {
     console.error("Error creating admin:", err);

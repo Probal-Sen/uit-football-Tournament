@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import Image from "next/image";
+import { useAuth } from "@/contexts/AuthContext";
 import { apiFetch } from "@/lib/api";
 
 type Team = {
@@ -40,13 +43,29 @@ type Match = {
   isPublished: boolean;
 };
 
+type PointsTableEntry = {
+  _id: string;
+  team: Team;
+  played: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  goalsFor: number;
+  goalsAgainst: number;
+  goalDifference: number;
+  points: number;
+  isPublished: boolean;
+};
+
 const DEPARTMENTS = ["CSE", "IT", "ECE", "EE", "CE", "AEIE"];
 
 export default function AdminDashboardPage() {
+  const router = useRouter();
+  const { isAuthenticated, isLoading } = useAuth();
   const [teams, setTeams] = useState<Team[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
-  const [pointsTable, setPointsTable] = useState<any[]>([]);
+  const [pointsTable, setPointsTable] = useState<PointsTableEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -98,18 +117,20 @@ export default function AdminDashboardPage() {
     setLoading(true);
     setError(null);
     try {
-      const [teamsData, matchesData, playersData, pointsData] = await Promise.all([
-        apiFetch<Team[]>("/teams/all"),
-        apiFetch<Match[]>("/matches/all"),
-        apiFetch<Player[]>("/players/all"),
-        apiFetch<any[]>("/points/all").catch(() => []), // Points might not exist yet
-      ]);
+      const [teamsData, matchesData, playersData, pointsData] =
+        await Promise.all([
+          apiFetch<Team[]>("/teams/all"),
+          apiFetch<Match[]>("/matches/all"),
+          apiFetch<Player[]>("/players/all"),
+          apiFetch<PointsTableEntry[]>("/points/all").catch(() => []), // Points might not exist yet
+        ]);
       setTeams(teamsData);
       setMatches(matchesData);
       setPlayers(playersData);
       setPointsTable(pointsData);
-    } catch (err: any) {
-      setError(err.message || "Failed to load admin data");
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      setError(error.message || "Failed to load admin data");
     } finally {
       setLoading(false);
     }
@@ -131,24 +152,24 @@ export default function AdminDashboardPage() {
       return;
     }
     if (!editingMatch) return;
-    
+
     const teamObj =
       editingMatch.teamA._id === newGoal.team
         ? editingMatch.teamA
         : editingMatch.teamB;
-    
+
     const playerObj = players.find((p) => p._id === newGoal.player);
     if (!playerObj) {
       setError("Selected player not found.");
       return;
     }
-    
+
     const goal: Goal = {
       team: teamObj,
       player: playerObj,
       minute: parseInt(newGoal.minute),
     };
-    
+
     setScoreForm({
       ...scoreForm,
       goals: [...scoreForm.goals, goal],
@@ -181,14 +202,24 @@ export default function AdminDashboardPage() {
       });
       setEditingMatch(null);
       await load();
-    } catch (err: any) {
-      setError(err.message || "Failed to update score");
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      setError(error.message || "Failed to update score");
     }
   }
 
   useEffect(() => {
-    void load();
-  }, []);
+    if (!isLoading && !isAuthenticated) {
+      router.push("/admin/login");
+    }
+  }, [isAuthenticated, isLoading, router]);
+
+  useEffect(() => {
+    // Only load data after authentication is confirmed
+    if (!isLoading && isAuthenticated) {
+      void load();
+    }
+  }, [isAuthenticated, isLoading]);
 
   async function createMatch(e: React.FormEvent) {
     e.preventDefault();
@@ -215,8 +246,9 @@ export default function AdminDashboardPage() {
         status: "upcoming",
       });
       await load();
-    } catch (err: any) {
-      setError(err.message || "Failed to create match");
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      setError(error.message || "Failed to create match");
     }
   }
 
@@ -243,8 +275,9 @@ export default function AdminDashboardPage() {
         captainName: "",
       });
       await load();
-    } catch (err: any) {
-      setError(err.message || "Failed to create team");
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      setError(error.message || "Failed to create team");
     }
   }
 
@@ -313,9 +346,14 @@ export default function AdminDashboardPage() {
         photoUrl: "",
       });
       await load();
-      setSuccess(editingPlayer ? "Player updated successfully!" : "Player created successfully!");
-    } catch (err: any) {
-      setError(err.message || "Failed to save player");
+      setSuccess(
+        editingPlayer
+          ? "Player updated successfully!"
+          : "Player created successfully!"
+      );
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      setError(error.message || "Failed to save player");
     }
   }
 
@@ -325,8 +363,9 @@ export default function AdminDashboardPage() {
       await apiFetch(`/players/${playerId}`, { method: "DELETE" });
       await load();
       setSuccess("Player deleted successfully!");
-    } catch (err: any) {
-      setError(err.message || "Failed to delete player");
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      setError(error.message || "Failed to delete player");
     }
   }
 
@@ -337,8 +376,9 @@ export default function AdminDashboardPage() {
         body: JSON.stringify({ isPublished }),
       });
       await load();
-    } catch (err: any) {
-      setError(err.message || "Failed to update publish status");
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      setError(error.message || "Failed to update publish status");
     }
   }
 
@@ -349,8 +389,9 @@ export default function AdminDashboardPage() {
         body: JSON.stringify({ status }),
       });
       await load();
-    } catch (err: any) {
-      setError(err.message || "Failed to update match status");
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      setError(error.message || "Failed to update match status");
     }
   }
 
@@ -361,8 +402,9 @@ export default function AdminDashboardPage() {
         body: JSON.stringify({ isPublished }),
       });
       await load();
-    } catch (err: any) {
-      setError(err.message || "Failed to update publish status");
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      setError(error.message || "Failed to update publish status");
     }
   }
 
@@ -373,19 +415,26 @@ export default function AdminDashboardPage() {
         body: JSON.stringify({ isPublished }),
       });
       await load();
-    } catch (err: any) {
-      setError(err.message || "Failed to update publish status");
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      setError(error.message || "Failed to update publish status");
     }
   }
 
   async function deleteTeam(teamId: string) {
-    if (!confirm("Are you sure you want to delete this team? This will also delete all players in this team.")) return;
+    if (
+      !confirm(
+        "Are you sure you want to delete this team? This will also delete all players in this team."
+      )
+    )
+      return;
     try {
       await apiFetch(`/teams/${teamId}`, { method: "DELETE" });
       await load();
       setSuccess("Team deleted successfully!");
-    } catch (err: any) {
-      setError(err.message || "Failed to delete team");
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      setError(error.message || "Failed to delete team");
     }
   }
 
@@ -395,8 +444,9 @@ export default function AdminDashboardPage() {
       await apiFetch(`/matches/${matchId}`, { method: "DELETE" });
       await load();
       setSuccess("Match deleted successfully!");
-    } catch (err: any) {
-      setError(err.message || "Failed to delete match");
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      setError(error.message || "Failed to delete match");
     }
   }
 
@@ -406,7 +456,9 @@ export default function AdminDashboardPage() {
       setSuccess(null);
       const completedMatches = matches.filter((m) => m.status === "completed");
       if (completedMatches.length === 0) {
-        setError("No completed matches found. Mark some matches as 'Completed' first.");
+        setError(
+          "No completed matches found. Mark some matches as 'Completed' first."
+        );
         return;
       }
       await apiFetch("/points/recalculate", { method: "POST" });
@@ -417,11 +469,14 @@ export default function AdminDashboardPage() {
         });
         setSuccess("Points table recalculated and published successfully!");
       } else {
-        setSuccess("Points table recalculated. Click 'Publish' to make it public.");
+        setSuccess(
+          "Points table recalculated. Click 'Publish' to make it public."
+        );
       }
       await load();
-    } catch (err: any) {
-      setError(err.message || "Failed to update points table");
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      setError(error.message || "Failed to update points table");
     }
   }
 
@@ -439,24 +494,50 @@ export default function AdminDashboardPage() {
           : "Points table hidden from public view."
       );
       await load();
-    } catch (err: any) {
-      setError(err.message || "Failed to update publish status");
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      setError(error.message || "Failed to update publish status");
     }
   }
 
   async function cleanupOrphanedEntries() {
-    if (!confirm("Are you sure you want to delete all points table entries for teams that no longer exist?")) return;
+    if (
+      !confirm(
+        "Are you sure you want to delete all points table entries for teams that no longer exist?"
+      )
+    )
+      return;
     try {
       setError(null);
       setSuccess(null);
-      const result = await apiFetch<{ message: string; deletedCount: number }>("/points/cleanup", {
-        method: "POST",
-      });
-      setSuccess(`Cleaned up ${result.deletedCount} orphaned entries successfully!`);
+      const result = await apiFetch<{ message: string; deletedCount: number }>(
+        "/points/cleanup",
+        {
+          method: "POST",
+        }
+      );
+      setSuccess(
+        `Cleaned up ${result.deletedCount} orphaned entries successfully!`
+      );
       await load();
-    } catch (err: any) {
-      setError(err.message || "Failed to cleanup orphaned entries");
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      setError(error.message || "Failed to cleanup orphaned entries");
     }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="stack gap-md">
+        <div className="section-header">
+          <h1 className="section-heading">Loading...</h1>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return null; // Router will redirect to login
   }
 
   return (
@@ -465,13 +546,17 @@ export default function AdminDashboardPage() {
         <div>
           <h1 className="section-heading">Admin Dashboard</h1>
           <p className="section-description">
-            Manage teams, fixtures, control live status and approve the points table.
+            Manage teams, fixtures, control live status and approve the points
+            table.
           </p>
         </div>
       </div>
       {error && <div className="alert alert-error">{error}</div>}
       {success && (
-        <div className="alert" style={{ background: "#10b981", color: "white" }}>
+        <div
+          className="alert"
+          style={{ background: "#10b981", color: "white" }}
+        >
           {success}
         </div>
       )}
@@ -514,7 +599,10 @@ export default function AdminDashboardPage() {
               )}
             </div>
             <div className="stack gap-sm">
-              <div className="admin-section-title" style={{ fontSize: "0.875rem" }}>
+              <div
+                className="admin-section-title"
+                style={{ fontSize: "0.875rem" }}
+              >
                 Points Table
               </div>
               <button
@@ -558,8 +646,8 @@ export default function AdminDashboardPage() {
                 </>
               )}
               <p className="muted" style={{ fontSize: "0.75rem" }}>
-                {matches.filter((m) => m.status === "completed").length} completed
-                match(es)
+                {matches.filter((m) => m.status === "completed").length}{" "}
+                completed match(es)
               </p>
             </div>
           </div>
@@ -593,7 +681,10 @@ export default function AdminDashboardPage() {
                         className="input"
                         value={teamForm.department}
                         onChange={(e) =>
-                          setTeamForm({ ...teamForm, department: e.target.value })
+                          setTeamForm({
+                            ...teamForm,
+                            department: e.target.value,
+                          })
                         }
                         required
                       >
@@ -612,19 +703,27 @@ export default function AdminDashboardPage() {
                         type="text"
                         value={teamForm.coachName}
                         onChange={(e) =>
-                          setTeamForm({ ...teamForm, coachName: e.target.value })
+                          setTeamForm({
+                            ...teamForm,
+                            coachName: e.target.value,
+                          })
                         }
                       />
                     </div>
                     <div className="field">
-                      <label htmlFor="team-captain">Captain Name (optional)</label>
+                      <label htmlFor="team-captain">
+                        Captain Name (optional)
+                      </label>
                       <input
                         id="team-captain"
                         className="input"
                         type="text"
                         value={teamForm.captainName}
                         onChange={(e) =>
-                          setTeamForm({ ...teamForm, captainName: e.target.value })
+                          setTeamForm({
+                            ...teamForm,
+                            captainName: e.target.value,
+                          })
                         }
                       />
                     </div>
@@ -657,7 +756,10 @@ export default function AdminDashboardPage() {
               )}
 
               {editingMatch && (
-                <div className="card" style={{ position: "relative", zIndex: 10 }}>
+                <div
+                  className="card"
+                  style={{ position: "relative", zIndex: 10 }}
+                >
                   <div className="flex-between mb-md">
                     <h2 className="admin-section-title">
                       Update Score & Goals: {editingMatch.teamA.name} vs{" "}
@@ -673,7 +775,13 @@ export default function AdminDashboardPage() {
                   <div className="form">
                     <div className="field">
                       <label>Score</label>
-                      <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: "1rem",
+                          alignItems: "center",
+                        }}
+                      >
                         <input
                           className="input"
                           type="number"
@@ -687,7 +795,9 @@ export default function AdminDashboardPage() {
                           }
                           style={{ width: "80px" }}
                         />
-                        <span style={{ fontSize: "1.5rem", fontWeight: "bold" }}>
+                        <span
+                          style={{ fontSize: "1.5rem", fontWeight: "bold" }}
+                        >
                           :
                         </span>
                         <input
@@ -704,7 +814,8 @@ export default function AdminDashboardPage() {
                           style={{ width: "80px" }}
                         />
                         <span className="muted">
-                          ({editingMatch.teamA.name} : {editingMatch.teamB.name})
+                          ({editingMatch.teamA.name} : {editingMatch.teamB.name}
+                          )
                         </span>
                       </div>
                     </div>
@@ -780,7 +891,9 @@ export default function AdminDashboardPage() {
                             {players
                               .filter((p) => {
                                 const teamId =
-                                  typeof p.team === "object" ? p.team._id : p.team;
+                                  typeof p.team === "object"
+                                    ? p.team._id
+                                    : p.team;
                                 return teamId === newGoal.team;
                               })
                               .map((p) => (
@@ -807,7 +920,11 @@ export default function AdminDashboardPage() {
                             type="button"
                             className="btn"
                             onClick={addGoal}
-                            disabled={!newGoal.team || !newGoal.minute || !newGoal.player}
+                            disabled={
+                              !newGoal.team ||
+                              !newGoal.minute ||
+                              !newGoal.player
+                            }
                           >
                             Add Goal
                           </button>
@@ -865,7 +982,13 @@ export default function AdminDashboardPage() {
                         required
                       />
                     </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr 1fr",
+                        gap: "1rem",
+                      }}
+                    >
                       <div className="field">
                         <label htmlFor="player-jersey">Jersey Number *</label>
                         <input
@@ -902,7 +1025,13 @@ export default function AdminDashboardPage() {
                         />
                       </div>
                     </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr 1fr",
+                        gap: "1rem",
+                      }}
+                    >
                       <div className="field">
                         <label htmlFor="player-department">Department *</label>
                         <select
@@ -931,7 +1060,10 @@ export default function AdminDashboardPage() {
                           className="input"
                           value={playerForm.team}
                           onChange={(e) =>
-                            setPlayerForm({ ...playerForm, team: e.target.value })
+                            setPlayerForm({
+                              ...playerForm,
+                              team: e.target.value,
+                            })
                           }
                           required
                         >
@@ -953,23 +1085,26 @@ export default function AdminDashboardPage() {
                         placeholder="https://example.com/photo.jpg"
                         value={playerForm.photoUrl}
                         onChange={(e) =>
-                          setPlayerForm({ ...playerForm, photoUrl: e.target.value })
+                          setPlayerForm({
+                            ...playerForm,
+                            photoUrl: e.target.value,
+                          })
                         }
                       />
                       {playerForm.photoUrl && (
                         <div style={{ marginTop: "0.5rem" }}>
-                          <img
+                          <Image
                             src={playerForm.photoUrl}
                             alt="Player preview"
+                            width={150}
+                            height={150}
                             style={{
-                              maxWidth: "150px",
-                              maxHeight: "150px",
                               objectFit: "cover",
                               borderRadius: "8px",
                               border: "1px solid #ccc",
                             }}
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).style.display = "none";
+                            onError={() => {
+                              // Image failed to load, will not display
                             }}
                           />
                         </div>
@@ -1073,7 +1208,10 @@ export default function AdminDashboardPage() {
                         onChange={(e) =>
                           setMatchForm({
                             ...matchForm,
-                            status: e.target.value as "upcoming" | "live" | "completed",
+                            status: e.target.value as
+                              | "upcoming"
+                              | "live"
+                              | "completed",
                           })
                         }
                         required
@@ -1107,7 +1245,9 @@ export default function AdminDashboardPage() {
                   </span>
                 </div>
                 {matches.length === 0 ? (
-                  <p className="muted mt-sm">No matches created yet. Create one above.</p>
+                  <p className="muted mt-sm">
+                    No matches created yet. Create one above.
+                  </p>
                 ) : (
                   <div className="scroll-y mt-sm">
                     <table className="table">
@@ -1129,8 +1269,8 @@ export default function AdminDashboardPage() {
                                 {m.teamA.name} vs {m.teamB.name}
                               </div>
                               <div className="muted">
-                                {m.venue} ·{" "}
-                                {m.teamA.department} vs {m.teamB.department}
+                                {m.venue} · {m.teamA.department} vs{" "}
+                                {m.teamB.department}
                               </div>
                             </td>
                             <td className="muted">
@@ -1142,8 +1282,8 @@ export default function AdminDashboardPage() {
                                   m.status === "live"
                                     ? "status-live"
                                     : m.status === "completed"
-                                      ? "status-completed"
-                                      : "status-upcoming"
+                                    ? "status-completed"
+                                    : "status-upcoming"
                                 }`}
                               >
                                 {m.status.toUpperCase()}
@@ -1198,7 +1338,9 @@ export default function AdminDashboardPage() {
                                       publishMatch(m._id, !m.isPublished)
                                     }
                                   >
-                                    {m.isPublished ? "Hide from public" : "Publish"}
+                                    {m.isPublished
+                                      ? "Hide from public"
+                                      : "Publish"}
                                   </button>
                                   <button
                                     className="btn"
@@ -1226,19 +1368,23 @@ export default function AdminDashboardPage() {
                   <span className="pill-small">
                     {players.length} players
                     {players.filter((p) => p.isPublished).length > 0 &&
-                      ` (${players.filter((p) => p.isPublished).length} published)`}
+                      ` (${
+                        players.filter((p) => p.isPublished).length
+                      } published)`}
                   </span>
                 </div>
                 {players.length === 0 ? (
                   <p className="muted mt-sm">
-                    No players added yet. Click "+ Add Player" to create one.
+                    No players added yet. Click &quot;+ Add Player&quot; to
+                    create one.
                   </p>
                 ) : (
                   <div className="scroll-y mt-sm">
                     <div
                       style={{
                         display: "grid",
-                        gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+                        gridTemplateColumns:
+                          "repeat(auto-fill, minmax(280px, 1fr))",
                         gap: "1rem",
                       }}
                     >
@@ -1249,18 +1395,18 @@ export default function AdminDashboardPage() {
                           <div key={player._id} className="card">
                             <div style={{ display: "flex", gap: "1rem" }}>
                               {player.photoUrl ? (
-                                <img
+                                <Image
                                   src={player.photoUrl}
                                   alt={player.name}
+                                  width={80}
+                                  height={80}
                                   style={{
-                                    width: "80px",
-                                    height: "80px",
                                     objectFit: "cover",
                                     borderRadius: "8px",
                                     border: "1px solid #ccc",
                                   }}
-                                  onError={(e) => {
-                                    (e.target as HTMLImageElement).style.display = "none";
+                                  onError={() => {
+                                    // Image failed to load
                                   }}
                                 />
                               ) : (
@@ -1283,15 +1429,24 @@ export default function AdminDashboardPage() {
                               )}
                               <div style={{ flex: 1 }}>
                                 <div className="card-title">{player.name}</div>
-                                <div className="muted" style={{ fontSize: "0.875rem" }}>
+                                <div
+                                  className="muted"
+                                  style={{ fontSize: "0.875rem" }}
+                                >
                                   #{player.jerseyNumber} · {player.position}
                                 </div>
-                                <div className="muted" style={{ fontSize: "0.75rem" }}>
-                                  {team ? team.name : "No team"} · {player.department}
+                                <div
+                                  className="muted"
+                                  style={{ fontSize: "0.75rem" }}
+                                >
+                                  {team ? team.name : "No team"} ·{" "}
+                                  {player.department}
                                 </div>
                                 <div style={{ marginTop: "0.5rem" }}>
                                   <span className="badge">
-                                    {player.isPublished ? "Published" : "Hidden"}
+                                    {player.isPublished
+                                      ? "Published"
+                                      : "Hidden"}
                                   </span>
                                 </div>
                                 <div
@@ -1304,14 +1459,25 @@ export default function AdminDashboardPage() {
                                   <button
                                     className="btn"
                                     onClick={() => openPlayerForm(player)}
-                                    style={{ padding: "0.25rem 0.5rem", fontSize: "0.875rem" }}
+                                    style={{
+                                      padding: "0.25rem 0.5rem",
+                                      fontSize: "0.875rem",
+                                    }}
                                   >
                                     Edit
                                   </button>
                                   <button
                                     className="btn"
-                                    onClick={() => publishPlayer(player._id, !player.isPublished)}
-                                    style={{ padding: "0.25rem 0.5rem", fontSize: "0.875rem" }}
+                                    onClick={() =>
+                                      publishPlayer(
+                                        player._id,
+                                        !player.isPublished
+                                      )
+                                    }
+                                    style={{
+                                      padding: "0.25rem 0.5rem",
+                                      fontSize: "0.875rem",
+                                    }}
                                   >
                                     {player.isPublished ? "Hide" : "Publish"}
                                   </button>
@@ -1344,7 +1510,9 @@ export default function AdminDashboardPage() {
                   <span className="pill-small">{teams.length} teams</span>
                 </div>
                 {teams.length === 0 ? (
-                  <p className="muted mt-sm">No teams created yet. Create one above.</p>
+                  <p className="muted mt-sm">
+                    No teams created yet. Create one above.
+                  </p>
                 ) : (
                   <div className="scroll-y mt-sm">
                     <table className="table">
@@ -1370,7 +1538,9 @@ export default function AdminDashboardPage() {
                               <div style={{ display: "flex", gap: "0.5rem" }}>
                                 <button
                                   className="btn"
-                                  onClick={() => publishTeam(t._id, !t.isPublished)}
+                                  onClick={() =>
+                                    publishTeam(t._id, !t.isPublished)
+                                  }
                                 >
                                   {t.isPublished ? "Hide" : "Publish"}
                                 </button>
@@ -1406,10 +1576,15 @@ export default function AdminDashboardPage() {
                   <div className="card mt-sm">
                     <p className="muted">
                       Points table is empty. Complete some matches and click
-                      "Recalculate & Publish" to generate the table.
+                      &quot;Recalculate &amp; Publish&quot; to generate the
+                      table.
                     </p>
-                    <p className="muted" style={{ fontSize: "0.875rem", marginTop: "0.5rem" }}>
-                      Completed matches: {matches.filter((m) => m.status === "completed").length}
+                    <p
+                      className="muted"
+                      style={{ fontSize: "0.875rem", marginTop: "0.5rem" }}
+                    >
+                      Completed matches:{" "}
+                      {matches.filter((m) => m.status === "completed").length}
                     </p>
                   </div>
                 ) : (
@@ -1436,12 +1611,17 @@ export default function AdminDashboardPage() {
                             <td>{index + 1}</td>
                             <td>
                               <div>
-                                {row.team && row.team !== null && typeof row.team === "object"
+                                {row.team &&
+                                row.team !== null &&
+                                typeof row.team === "object"
                                   ? row.team.name || "Unknown Team"
                                   : "Unknown Team (Deleted)"}
                               </div>
                               <div className="muted text-xs">
-                                {row.team && row.team !== null && typeof row.team === "object" && row.team.department
+                                {row.team &&
+                                row.team !== null &&
+                                typeof row.team === "object" &&
+                                row.team.department
                                   ? `${row.team.department} Department`
                                   : ""}
                               </div>
