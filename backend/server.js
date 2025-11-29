@@ -25,8 +25,10 @@ const server = http.createServer(app);
 const allowedOrigins = [
   process.env.CLIENT_ORIGIN,
   "http://localhost:3000",
+  "http://localhost:3001",
   "https://uit-football-tournament.vercel.app",
-].filter(Boolean);
+  "https://uit-football-tournament.vercel.app/",
+].filter(Boolean).map(origin => origin.replace(/\/$/, "")); // Remove trailing slashes
 
 // SOCKET.IO
 const io = new Server(server, {
