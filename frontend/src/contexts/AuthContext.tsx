@@ -21,9 +21,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function checkAuth() {
     try {
-      // Try to access an admin-only endpoint to check if authenticated
-      await apiFetch("/teams/all");
-      setIsAuthenticated(true);
+      const apiBase =
+        process.env.NEXT_PUBLIC_API_BASE ||
+        (typeof window !== "undefined" &&
+        window.location.hostname === "localhost"
+          ? "http://localhost:4000/api"
+          : "https://uit-football-tournament.onrender.com/api");
+      const response = await fetch(`${apiBase}/teams/all`, {
+        credentials: "include",
+      });
+      if (response.ok) {
+        setIsAuthenticated(true);
+      } else {
+        setIsAuthenticated(false);
+      }
     } catch {
       setIsAuthenticated(false);
     } finally {
@@ -36,15 +47,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       method: "POST",
       body: JSON.stringify({ email, password }),
     });
-    setIsAuthenticated(true);
-    router.push("/admin");
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    try {
+      const apiBase =
+        process.env.NEXT_PUBLIC_API_BASE ||
+        (typeof window !== "undefined" &&
+        window.location.hostname === "localhost"
+          ? "http://localhost:4000/api"
+          : "https://uit-football-tournament.onrender.com/api");
+      const response = await fetch(`${apiBase}/teams/all`, {
+        credentials: "include",
+      });
+      if (response.ok) {
+        setIsAuthenticated(true);
+        router.push("/admin");
+      } else {
+        throw new Error("Auth check failed after login");
+      }
+    } catch (error) {
+      setIsAuthenticated(false);
+      throw error;
+    }
   }
 
   async function logout() {
     try {
       await apiFetch("/auth/logout", { method: "POST" });
     } catch {
-      // Ignore errors
+      // ignore
     }
     setIsAuthenticated(false);
     router.push("/");
@@ -70,4 +100,3 @@ export function useAuth() {
   }
   return context;
 }
-

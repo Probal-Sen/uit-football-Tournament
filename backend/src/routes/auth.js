@@ -38,11 +38,13 @@ router.post('/login', async (req, res) => {
       expiresIn: '8h',
     });
 
+    console.log('Login successful, setting cookie with sameSite: none, secure: true, origin:', req.headers.origin);
     res
       .cookie('token', token, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
+        secure: true,
+        sameSite: 'none',
+        path: '/',
       })
       .json({ message: 'Logged in' });
   } catch (err) {
@@ -55,8 +57,9 @@ router.post('/logout', (req, res) => {
   res
     .clearCookie('token', {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      secure: true,
+      sameSite: 'none',
+      path: '/',
     })
     .json({ message: 'Logged out' });
 });

@@ -17,14 +17,26 @@ const pointsRoutes = require("./src/routes/points");
 
 // MODELS
 const User = require("./src/models/User");
+const Admin = require("./src/models/Admin");
 
 const app = express();
 const server = http.createServer(app);
 
+// ALLOWED ORIGINS FOR CORS & SOCKET.IO
+const allowedOrigins = [
+  process.env.CLIENT_ORIGIN,
+  "http://localhost:3000",
+  "http://localhost:3001",
+  "https://uit-football-tournament.vercel.app",
+  "https://uit-football-tournament.vercel.app/",
+]
+  .filter(Boolean)
+  .map((origin) => origin.replace(/\/$/, "")); // Remove trailing slashes
+
 // SOCKET.IO
 const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_ORIGIN || "*",
+    origin: allowedOrigins,
     credentials: true,
   },
 });
@@ -40,7 +52,13 @@ io.on("connection", (socket) => {
 // MIDDLEWARE
 app.use(
   cors({
-    origin: process.env.CLIENT_ORIGIN || "*",
+    origin: function (origin, callback) {
+      if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
     credentials: true,
   })
 );
@@ -68,20 +86,18 @@ app.get("/", (req, res) => {
 // AUTO ADMIN CREATOR
 async function createAdmin() {
   try {
-    const exists = await User.findOne({ email: "9probalsen@gmail.com" });
+    const exists = await Admin.findOne({ email: "9probalsen@gmail.com" });
     if (exists) {
       console.log("Admin already exists");
       return;
     }
 
-    const admin = new User({
-      username: "admin",
+    const passwordHash = await Admin.hashPassword("Probal2004");
+    await Admin.create({
       email: "9probalsen@gmail.com",
-      password: "Probal2004",
-      isAdmin: true,
+      passwordHash: passwordHash,
+      name: "Tournament Admin",
     });
-
-    await admin.save();
     console.log("Admin created successfully");
   } catch (err) {
     console.error("Error creating admin:", err);
