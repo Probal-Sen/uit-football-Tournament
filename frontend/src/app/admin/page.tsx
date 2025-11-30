@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
+import Image from "next/image";
 
 type Team = {
   _id: string;
@@ -147,6 +148,7 @@ export default function AdminDashboardPage() {
     name: "",
     position: "",
     department: "CSE",
+    jerseyNumber: "",
   });
 
   async function load() {
@@ -438,6 +440,7 @@ export default function AdminDashboardPage() {
         name: player.name,
         position: player.position,
         department: selectedTeam?.department || player.department,
+        jerseyNumber: player.jerseyNumber.toString(),
       });
     } else {
       setEditingPlayer(null);
@@ -445,6 +448,7 @@ export default function AdminDashboardPage() {
         name: "",
         position: "",
         department: "CSE",
+        jerseyNumber: "",
       });
     }
     setShowPlayerForm(true);
@@ -466,11 +470,19 @@ export default function AdminDashboardPage() {
         return;
       }
 
+      // Validate jersey number
+      const jerseyNumber = parseInt(playerForm.jerseyNumber);
+      if (isNaN(jerseyNumber) || jerseyNumber < 1 || jerseyNumber > 99) {
+        setError("Please enter a valid jersey number between 1 and 99");
+        return;
+      }
+
       const playerData = {
         name: playerForm.name.trim(),
         position: playerForm.position.trim(),
         department: playerForm.department,
         team: team._id,
+        jerseyNumber: jerseyNumber,
       };
 
       console.log("Creating player with data:", playerData);
@@ -496,6 +508,7 @@ export default function AdminDashboardPage() {
         name: "",
         position: "",
         department: "CSE",
+        jerseyNumber: "",
       });
       await load();
       setSuccess(editingPlayer ? "Player updated successfully!" : "Player created successfully!");
@@ -1141,19 +1154,129 @@ export default function AdminDashboardPage() {
                               setNewGoal({ ...newGoal, team: e.target.value, player: "" });
                             }}
                           >
-                            <option value="">Select Team *</option>
-                            <option value={editingMatch.teamA._id}>
-                              {editingMatch.teamA.name}
-                            </option>
-                            <option value={editingMatch.teamB._id}>
-                              {editingMatch.teamB.name}
-                            </option>
-                          </select>
-                          
-                          {newGoal.team && (
-                            <>
-                              <label style={{ fontSize: "0.875rem", color: "var(--muted)" }}>
-                                Select Scorer (from playing 7):
+                          <option value="">Select Team *</option>
+                          <option value={editingMatch.teamA._id}>
+                            {editingMatch.teamA.name}
+                          </option>
+                          <option value={editingMatch.teamB._id}>
+                            {editingMatch.teamB.name}
+                          </option>
+                        </select>
+                        
+                        {newGoal.team && (
+                          <>
+                            <label style={{ fontSize: "0.875rem", color: "var(--muted)" }}>
+                              Select Scorer (from playing 7):
+                            </label>
+                            <div
+                              style={{
+                                display: "grid",
+                                gridTemplateColumns: isMobile ? "1fr" : "repeat(2, 1fr)",
+                                gap: "0.5rem",
+                                maxHeight: "200px",
+                                overflowY: "auto",
+                                padding: "0.5rem",
+                                background: "rgba(15, 23, 42, 0.5)",
+                                borderRadius: "0.5rem",
+                              }}
+                            >
+                            {getLineupPlayers(editingMatch, newGoal.team).map((p) => {
+                              const isSelected = newGoal.player === p._id;
+                              const isGoalkeeper = (() => {
+                                const isTeamA = editingMatch.teamA._id === newGoal.team;
+                                const lineup = isTeamA ? editingMatch.teamALineup : editingMatch.teamBLineup;
+                                if (!lineup) return false;
+                                const gkId = typeof lineup.goalkeeper === 'object' 
+                                  ? lineup.goalkeeper._id 
+                                  : lineup.goalkeeper;
+                                return p._id === gkId;
+                              })();
+                  
+                              return (
+                                <label
+                                  key={p._id}
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: "0.5rem",
+                                    padding: "0.5rem",
+                                    background: isSelected ? "rgba(34, 197, 94, 0.2)" : "rgba(15, 23, 42, 0.9)",
+                                    border: isSelected ? "1px solid #22c55e" : "1px solid rgba(148, 163, 184, 0.4)",
+                                    borderRadius: "0.5rem",
+                                    cursor: "pointer",
+                                    fontSize: "0.875rem",
+                                  }}
+                                >
+                                <input
+                                  type="radio"
+                                  name="goal-scorer"
+                                  checked={isSelected}
+                                  onChange={() => setNewGoal({ ...newGoal, player: p._id })}
+                                />
+                                <span>
+                                  #{p.jerseyNumber} {p.name} - {p.position}
+                                  {isGoalkeeper && " (GK)"}
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+                        <div style={{ display: "flex", gap: "0.5rem" }}>
+                          <input
+                            className="input"
+                            type="number"
+                            min="0"
+                            max="120"
+                            placeholder="Minute *"
+                            value={newGoal.minute}
+                            onChange={(e) =>
+                              setNewGoal({ ...newGoal, minute: e.target.value })
+                            }
+                            style={{ flex: 1 }}
+                          />
+                          <button
+                            type="button"
+                            className="btn btn-primary"
+                            onClick={addGoal}
+                            disabled={!newGoal.team || !newGoal.minute || !newGoal.player}
+                          >
+                            Add Goal
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Substitute Section */}
+                  {showSubstitute && (
+                    <div className="field" style={{ border: "1px solid rgba(148, 163, 184, 0.3)", padding: "1rem", borderRadius: "0.5rem" }}>
+                      <label style={{ fontSize: "1rem", marginBottom: "0.75rem", display: "block" }}>
+                        Make Substitution
+                      </label>
+                      <div className="stack gap-md">
+                        <select
+                          className="input"
+                          value={substituteForm.team}
+                          onChange={(e) => {
+                            setSubstituteForm({ ...substituteForm, team: e.target.value, playerOut: "", playerIn: "" });
+                          }}
+                        >
+                          <option value="">Select Team *</option>
+                          <option value={editingMatch.teamA._id}>
+                            {editingMatch.teamA.name}
+                          </option>
+                          <option value={editingMatch.teamB._id}>
+                            {editingMatch.teamB.name}
+                          </option>
+                        </select>
+
+                        {substituteForm.team && (
+                          <>
+                            <div>
+                              <label style={{ fontSize: "0.875rem", color: "var(--muted)", marginBottom: "0.5rem", display: "block" }}>
+                                Player Going Out (from playing 7):
                               </label>
                               <div
                                 style={{
@@ -1167,10 +1290,10 @@ export default function AdminDashboardPage() {
                                   borderRadius: "0.5rem",
                                 }}
                               >
-                                {getLineupPlayers(editingMatch, newGoal.team).map((p) => {
-                                  const isSelected = newGoal.player === p._id;
+                                {getLineupPlayers(editingMatch, substituteForm.team).map((p) => {
+                                  const isSelected = substituteForm.playerOut === p._id;
                                   const isGoalkeeper = (() => {
-                                    const isTeamA = editingMatch.teamA._id === newGoal.team;
+                                    const isTeamA = editingMatch.teamA._id === substituteForm.team;
                                     const lineup = isTeamA ? editingMatch.teamALineup : editingMatch.teamBLineup;
                                     if (!lineup) return false;
                                     const gkId = typeof lineup.goalkeeper === 'object' 
@@ -1187,8 +1310,8 @@ export default function AdminDashboardPage() {
                                         alignItems: "center",
                                         gap: "0.5rem",
                                         padding: "0.5rem",
-                                        background: isSelected ? "rgba(34, 197, 94, 0.2)" : "rgba(15, 23, 42, 0.9)",
-                                        border: isSelected ? "1px solid #22c55e" : "1px solid rgba(148, 163, 184, 0.4)",
+                                        background: isSelected ? "rgba(239, 68, 68, 0.2)" : "rgba(15, 23, 42, 0.9)",
+                                        border: isSelected ? "1px solid #ef4444" : "1px solid rgba(148, 163, 184, 0.4)",
                                         borderRadius: "0.5rem",
                                         cursor: "pointer",
                                         fontSize: "0.875rem",
@@ -1196,75 +1319,24 @@ export default function AdminDashboardPage() {
                                     >
                                       <input
                                         type="radio"
-                                        name="goal-scorer"
+                                        name="player-out"
                                         checked={isSelected}
-                                        onChange={() => setNewGoal({ ...newGoal, player: p._id })}
+                                        onChange={() => setSubstituteForm({ ...substituteForm, playerOut: p._id, playerIn: "" })}
                                       />
                                       <span>
-                                        {p.name} - {p.position}
+                                        #{p.jerseyNumber} {p.name} - {p.position}
                                         {isGoalkeeper && " (GK)"}
                                       </span>
                                     </label>
                                   );
                                 })}
                               </div>
-                            </>
-                          )}
+                            </div>
 
-                          <div style={{ display: "flex", gap: "0.5rem" }}>
-                            <input
-                              className="input"
-                              type="number"
-                              min="0"
-                              max="120"
-                              placeholder="Minute *"
-                              value={newGoal.minute}
-                              onChange={(e) =>
-                                setNewGoal({ ...newGoal, minute: e.target.value })
-                              }
-                              style={{ flex: 1 }}
-                            />
-                            <button
-                              type="button"
-                              className="btn btn-primary"
-                              onClick={addGoal}
-                              disabled={!newGoal.team || !newGoal.minute || !newGoal.player}
-                            >
-                              Add Goal
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Substitute Section */}
-                    {showSubstitute && (
-                      <div className="field" style={{ border: "1px solid rgba(148, 163, 184, 0.3)", padding: "1rem", borderRadius: "0.5rem" }}>
-                        <label style={{ fontSize: "1rem", marginBottom: "0.75rem", display: "block" }}>
-                          Make Substitution
-                        </label>
-                        <div className="stack gap-md">
-                          <select
-                            className="input"
-                            value={substituteForm.team}
-                            onChange={(e) => {
-                              setSubstituteForm({ ...substituteForm, team: e.target.value, playerOut: "", playerIn: "" });
-                            }}
-                          >
-                            <option value="">Select Team *</option>
-                            <option value={editingMatch.teamA._id}>
-                              {editingMatch.teamA.name}
-                            </option>
-                            <option value={editingMatch.teamB._id}>
-                              {editingMatch.teamB.name}
-                            </option>
-                          </select>
-
-                          {substituteForm.team && (
-                            <>
+                            {substituteForm.playerOut && (
                               <div>
                                 <label style={{ fontSize: "0.875rem", color: "var(--muted)", marginBottom: "0.5rem", display: "block" }}>
-                                  Player Going Out (from playing 7):
+                                  Player Coming In (from bench):
                                 </label>
                                 <div
                                   style={{
@@ -1278,18 +1350,8 @@ export default function AdminDashboardPage() {
                                     borderRadius: "0.5rem",
                                   }}
                                 >
-                                  {getLineupPlayers(editingMatch, substituteForm.team).map((p) => {
-                                    const isSelected = substituteForm.playerOut === p._id;
-                                    const isGoalkeeper = (() => {
-                                      const isTeamA = editingMatch.teamA._id === substituteForm.team;
-                                      const lineup = isTeamA ? editingMatch.teamALineup : editingMatch.teamBLineup;
-                                      if (!lineup) return false;
-                                      const gkId = typeof lineup.goalkeeper === 'object' 
-                                        ? lineup.goalkeeper._id 
-                                        : lineup.goalkeeper;
-                                      return p._id === gkId;
-                                    })();
-                                    
+                                  {getBenchPlayers(editingMatch, substituteForm.team).map((p) => {
+                                    const isSelected = substituteForm.playerIn === p._id;
                                     return (
                                       <label
                                         key={p._id}
@@ -1298,8 +1360,8 @@ export default function AdminDashboardPage() {
                                           alignItems: "center",
                                           gap: "0.5rem",
                                           padding: "0.5rem",
-                                          background: isSelected ? "rgba(239, 68, 68, 0.2)" : "rgba(15, 23, 42, 0.9)",
-                                          border: isSelected ? "1px solid #ef4444" : "1px solid rgba(148, 163, 184, 0.4)",
+                                          background: isSelected ? "rgba(34, 197, 94, 0.2)" : "rgba(15, 23, 42, 0.9)",
+                                          border: isSelected ? "1px solid #22c55e" : "1px solid rgba(148, 163, 184, 0.4)",
                                           borderRadius: "0.5rem",
                                           cursor: "pointer",
                                           fontSize: "0.875rem",
@@ -1307,726 +1369,637 @@ export default function AdminDashboardPage() {
                                       >
                                         <input
                                           type="radio"
-                                          name="player-out"
+                                          name="player-in"
                                           checked={isSelected}
-                                          onChange={() => setSubstituteForm({ ...substituteForm, playerOut: p._id, playerIn: "" })}
+                                          onChange={() => setSubstituteForm({ ...substituteForm, playerIn: p._id })}
                                         />
                                         <span>
-                                          {p.name} - {p.position}
-                                          {isGoalkeeper && " (GK)"}
+                                          #{p.jerseyNumber} {p.name} - {p.position}
                                         </span>
                                       </label>
                                     );
                                   })}
                                 </div>
                               </div>
+                            )}
 
-                              {substituteForm.playerOut && (
-                                <div>
-                                  <label style={{ fontSize: "0.875rem", color: "var(--muted)", marginBottom: "0.5rem", display: "block" }}>
-                                    Player Coming In (from bench):
-                                  </label>
-                                  <div
-                                    style={{
-                                      display: "grid",
-                                      gridTemplateColumns: isMobile ? "1fr" : "repeat(2, 1fr)",
-                                      gap: "0.5rem",
-                                      maxHeight: "200px",
-                                      overflowY: "auto",
-                                      padding: "0.5rem",
-                                      background: "rgba(15, 23, 42, 0.5)",
-                                      borderRadius: "0.5rem",
-                                    }}
-                                  >
-                                    {getBenchPlayers(editingMatch, substituteForm.team).map((p) => {
-                                      const isSelected = substituteForm.playerIn === p._id;
-                                      return (
-                                        <label
-                                          key={p._id}
-                                          style={{
-                                            display: "flex",
-                                            alignItems: "center",
-                                            gap: "0.5rem",
-                                            padding: "0.5rem",
-                                            background: isSelected ? "rgba(34, 197, 94, 0.2)" : "rgba(15, 23, 42, 0.9)",
-                                            border: isSelected ? "1px solid #22c55e" : "1px solid rgba(148, 163, 184, 0.4)",
-                                            borderRadius: "0.5rem",
-                                            cursor: "pointer",
-                                            fontSize: "0.875rem",
-                                          }}
-                                        >
-                                          <input
-                                            type="radio"
-                                            name="player-in"
-                                            checked={isSelected}
-                                            onChange={() => setSubstituteForm({ ...substituteForm, playerIn: p._id })}
-                                          />
-                                          <span>
-                                            {p.name} - {p.position}
-                                          </span>
-                                        </label>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              )}
-
-                              <button
-                                type="button"
-                                className="btn btn-primary"
-                                onClick={makeSubstitution}
-                                disabled={!substituteForm.team || !substituteForm.playerOut || !substituteForm.playerIn}
-                              >
-                                Make Substitution
-                              </button>
-                            </>
-                          )}
-                        </div>
+                            <button
+                              type="button"
+                              className="btn btn-primary"
+                              onClick={makeSubstitution}
+                              disabled={!substituteForm.team || !substituteForm.playerOut || !substituteForm.playerIn}
+                            >
+                              Make Substitution
+                            </button>
+                          </>
+                        )}
                       </div>
-                    )}
+                    </div>
+                  )}
 
-                    <div 
-                      className="flex-between mt-md"
+                  <div 
+                    className="flex-between mt-md"
+                    style={{
+                      flexDirection: isMobile ? "column" : "row",
+                      gap: "0.75rem",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={saveScore}
                       style={{
-                        flexDirection: isMobile ? "column" : "row",
-                        gap: "0.75rem",
+                        width: isMobile ? "100%" : "auto",
+                        order: isMobile ? 2 : 1,
                       }}
                     >
-                      <button
-                        type="button"
-                        className="btn btn-primary"
-                        onClick={saveScore}
-                        style={{
-                          width: isMobile ? "100%" : "auto",
-                          order: isMobile ? 2 : 1,
-                        }}
-                      >
-                        Save Score & Goals
-                      </button>
-                      <button
-                        type="button"
-                        className="btn"
-                        onClick={() => setEditingMatch(null)}
-                        style={{
-                          width: isMobile ? "100%" : "auto",
-                          order: isMobile ? 1 : 2,
-                        }}
-                      >
-                        Cancel
-                      </button>
-                    </div>
+                      Save Score & Goals
+                    </button>
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => setEditingMatch(null)}
+                      style={{
+                        width: isMobile ? "100%" : "auto",
+                        order: isMobile ? 1 : 2,
+                      }}
+                    >
+                      Cancel
+                    </button>
                   </div>
                 </div>
-              )}
+              </div>
+            )}
 
-              {showPlayerForm && (
-                <div className="card">
-                  <div className="flex-between mb-md">
-                    <h2 className="admin-section-title">
-                      {editingPlayer ? "Edit Player" : "Create New Player"}
-                    </h2>
+            {showPlayerForm && (
+              <div className="card">
+                <div className="flex-between mb-md">
+                  <h2 className="admin-section-title">
+                    {editingPlayer ? "Edit Player" : "Create New Player"}
+                  </h2>
+                  <button
+                    className="btn"
+                    onClick={() => {
+                      setShowPlayerForm(false);
+                      setEditingPlayer(null);
+                    }}
+                  >
+                    Close
+                  </button>
+                </div>
+                <form onSubmit={savePlayer} className="form">
+                  <div className="field">
+                    <label htmlFor="player-name">Player Name *</label>
+                    <input
+                      id="player-name"
+                      className="input"
+                      type="text"
+                      value={playerForm.name}
+                      onChange={(e) =>
+                        setPlayerForm({ ...playerForm, name: e.target.value })
+                      }
+                      required
+                    />
+                  </div>
+                  
+                  <div className="field">
+                    <label htmlFor="player-jersey">Jersey Number *</label>
+                    <input
+                      id="player-jersey"
+                      className="input"
+                      type="number"
+                      min="1"
+                      max="99"
+                      value={playerForm.jerseyNumber}
+                      onChange={(e) =>
+                        setPlayerForm({
+                          ...playerForm,
+                          jerseyNumber: e.target.value,
+                        })
+                      }
+                      required
+                    />
+                  </div>
+                  
+                  <div className="field">
+                    <label htmlFor="player-department">Department *</label>
+                    <select
+                      id="player-department"
+                      className="input"
+                      value={playerForm.department}
+                      onChange={(e) =>
+                        setPlayerForm({
+                          ...playerForm,
+                          department: e.target.value,
+                        })
+                      }
+                      required
+                    >
+                      {DEPARTMENTS.map((dept) => (
+                        <option key={dept} value={dept}>
+                          {dept}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="muted" style={{ fontSize: "0.75rem", marginTop: "0.25rem" }}>
+                      Player will be assigned to the team from this department
+                    </p>
+                  </div>
+                  
+                  <div className="field">
+                    <label htmlFor="player-position">Position *</label>
+                    <input
+                      id="player-position"
+                      className="input"
+                      type="text"
+                      placeholder="e.g., Forward, Midfielder, Defender, Goalkeeper"
+                      value={playerForm.position}
+                      onChange={(e) =>
+                        setPlayerForm({
+                          ...playerForm,
+                          position: e.target.value,
+                        })
+                      }
+                      required
+                    />
+                  </div>
+                  
+                  <div 
+                    className="flex-between"
+                    style={{
+                      flexDirection: isMobile ? "column" : "row",
+                      gap: "0.75rem",
+                    }}
+                  >
+                    <button 
+                      type="submit" 
+                      className="btn btn-primary"
+                      style={{
+                        width: isMobile ? "100%" : "auto",
+                        order: isMobile ? 2 : 1,
+                      }}
+                    >
+                      {editingPlayer ? "Update Player" : "Create Player"}
+                    </button>
                     <button
+                      type="button"
                       className="btn"
                       onClick={() => {
                         setShowPlayerForm(false);
                         setEditingPlayer(null);
                       }}
-                    >
-                      Close
-                    </button>
-                  </div>
-                  <form onSubmit={savePlayer} className="form">
-                    <div className="field">
-                      <label htmlFor="player-name">Player Name *</label>
-                      <input
-                        id="player-name"
-                        className="input"
-                        type="text"
-                        value={playerForm.name}
-                        onChange={(e) =>
-                          setPlayerForm({ ...playerForm, name: e.target.value })
-                        }
-                        required
-                      />
-                    </div>
-                    <div className="field">
-                      <label htmlFor="player-department">Department *</label>
-                      <select
-                        id="player-department"
-                        className="input"
-                        value={playerForm.department}
-                        onChange={(e) =>
-                          setPlayerForm({
-                            ...playerForm,
-                            department: e.target.value,
-                          })
-                        }
-                        required
-                      >
-                        {DEPARTMENTS.map((dept) => (
-                          <option key={dept} value={dept}>
-                            {dept}
-                          </option>
-                        ))}
-                      </select>
-                      <p className="muted" style={{ fontSize: "0.75rem", marginTop: "0.25rem" }}>
-                        Player will be assigned to the team from this department
-                      </p>
-                    </div>
-                    <div className="field">
-                      <label htmlFor="player-position">Position *</label>
-                      <input
-                        id="player-position"
-                        className="input"
-                        type="text"
-                        placeholder="e.g., Forward, Midfielder, Defender, Goalkeeper"
-                        value={playerForm.position}
-                        onChange={(e) =>
-                          setPlayerForm({
-                            ...playerForm,
-                            position: e.target.value,
-                          })
-                        }
-                        required
-                      />
-                    </div>
-                    <div 
-                      className="flex-between"
                       style={{
-                        flexDirection: isMobile ? "column" : "row",
-                        gap: "0.75rem",
+                        width: isMobile ? "100%" : "auto",
+                        order: isMobile ? 1 : 2,
                       }}
                     >
-                      <button 
-                        type="submit" 
-                        className="btn btn-primary"
-                        style={{
-                          width: isMobile ? "100%" : "auto",
-                          order: isMobile ? 2 : 1,
-                        }}
-                      >
-                        {editingPlayer ? "Update Player" : "Create Player"}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn"
-                        onClick={() => {
-                          setShowPlayerForm(false);
-                          setEditingPlayer(null);
-                        }}
-                        style={{
-                          width: isMobile ? "100%" : "auto",
-                          order: isMobile ? 1 : 2,
-                        }}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              )}
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
 
-              {showMatchForm && (
-                <div className="card">
-                  <h2 className="admin-section-title">Create New Match</h2>
-                  <form onSubmit={createMatch} className="form">
-                    <div className="field">
-                      <label htmlFor="match-teamA">Team A *</label>
-                      <select
-                        id="match-teamA"
-                        className="input"
-                        value={matchForm.teamA}
-                        onChange={(e) =>
-                          setMatchForm({ ...matchForm, teamA: e.target.value })
-                        }
-                        required
-                      >
-                        <option value="">Select Team A</option>
-                        {teams.map((team) => (
+            {showMatchForm && (
+              <div className="card">
+                <h2 className="admin-section-title">Create New Match</h2>
+                <form onSubmit={createMatch} className="form">
+                  <div className="field">
+                    <label htmlFor="match-teamA">Team A *</label>
+                    <select
+                      id="match-teamA"
+                      className="input"
+                      value={matchForm.teamA}
+                      onChange={(e) =>
+                        setMatchForm({ ...matchForm, teamA: e.target.value })
+                      }
+                      required
+                    >
+                      <option value="">Select Team A</option>
+                      {teams.map((team) => (
+                        <option key={team._id} value={team._id}>
+                          {team.name} ({team.department})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="match-teamB">Team B *</label>
+                    <select
+                      id="match-teamB"
+                      className="input"
+                      value={matchForm.teamB}
+                      onChange={(e) =>
+                        setMatchForm({ ...matchForm, teamB: e.target.value })
+                      }
+                      required
+                    >
+                      <option value="">Select Team B</option>
+                      {teams
+                        .filter((team) => team._id !== matchForm.teamA)
+                        .map((team) => (
                           <option key={team._id} value={team._id}>
                             {team.name} ({team.department})
                           </option>
                         ))}
-                      </select>
-                    </div>
-                    <div className="field">
-                      <label htmlFor="match-teamB">Team B *</label>
-                      <select
-                        id="match-teamB"
-                        className="input"
-                        value={matchForm.teamB}
-                        onChange={(e) =>
-                          setMatchForm({ ...matchForm, teamB: e.target.value })
-                        }
-                        required
-                      >
-                        <option value="">Select Team B</option>
-                        {teams
-                          .filter((team) => team._id !== matchForm.teamA)
-                          .map((team) => (
-                            <option key={team._id} value={team._id}>
-                              {team.name} ({team.department})
-                            </option>
-                          ))}
-                      </select>
-                    </div>
-                    <div className="field">
-                      <label htmlFor="match-date">Date & Time *</label>
-                      <input
-                        id="match-date"
-                        className="input"
-                        type="datetime-local"
-                        value={matchForm.date}
-                        onChange={(e) =>
-                          setMatchForm({ ...matchForm, date: e.target.value })
-                        }
-                        required
-                      />
-                    </div>
-                    <div className="field">
-                      <label htmlFor="match-venue">Venue *</label>
-                      <input
-                        id="match-venue"
-                        className="input"
-                        type="text"
-                        value={matchForm.venue}
-                        onChange={(e) =>
-                          setMatchForm({ ...matchForm, venue: e.target.value })
-                        }
-                        required
-                      />
-                    </div>
-                    <div className="field">
-                      <label htmlFor="match-status">Initial Status *</label>
-                      <select
-                        id="match-status"
-                        className="input"
-                        value={matchForm.status}
-                        onChange={(e) =>
-                          setMatchForm({
-                            ...matchForm,
-                            status: e.target.value as
-                              | "upcoming"
-                              | "live"
-                              | "completed",
-                          })
-                        }
-                        required
-                      >
-                        <option value="upcoming">Upcoming</option>
-                        <option value="live">Live</option>
-                        <option value="completed">Completed</option>
-                      </select>
-                    </div>
-                    <div 
-                      className="flex-between"
-                      style={{
-                        flexDirection: isMobile ? "column" : "row",
-                        gap: "0.75rem",
-                      }}
-                    >
-                      <button 
-                        type="submit" 
-                        className="btn btn-primary"
-                        style={{
-                          width: isMobile ? "100%" : "auto",
-                          order: isMobile ? 2 : 1,
-                        }}
-                      >
-                        Create Match
-                      </button>
-                      <button
-                        type="button"
-                        className="btn"
-                        onClick={() => setShowMatchForm(false)}
-                        style={{
-                          width: isMobile ? "100%" : "auto",
-                          order: isMobile ? 1 : 2,
-                        }}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              )}
-
-              <div>
-                <div className="flex-between">
-                  <h2 className="admin-section-title">Matches</h2>
-                  <span className="pill-small">
-                    {matches.length} configured fixtures
-                  </span>
-                </div>
-                {matches.length === 0 ? (
-                  <p className="muted mt-sm">
-                    No matches created yet. Create one above.
-                  </p>
-                ) : (
-                  <div className="scroll-y mt-sm" style={{ overflowX: "auto" }}>
-                    <table className="table">
-                      <thead>
-                        <tr>
-                          <th style={{ fontSize: isMobile ? "0.7rem" : "0.78rem" }}>Match</th>
-                          <th style={{ fontSize: isMobile ? "0.7rem" : "0.78rem", display: isMobile ? "none" : "table-cell" }}>Kickoff</th>
-                          <th style={{ fontSize: isMobile ? "0.7rem" : "0.78rem" }}>Status</th>
-                          <th style={{ fontSize: isMobile ? "0.7rem" : "0.78rem" }}>Score</th>
-                          <th style={{ fontSize: isMobile ? "0.7rem" : "0.78rem" }}>Publish</th>
-                          <th style={{ fontSize: isMobile ? "0.7rem" : "0.78rem" }}>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {matches.map((m) => (
-                          <tr key={m._id}>
-                            <td>
-                              <div className="card-title">
-                                {m.teamA.name} vs {m.teamB.name}
-                              </div>
-                              <div className="muted">
-                                {m.venue} · {m.teamA.department} vs{" "}
-                                {m.teamB.department}
-                              </div>
-                            </td>
-                            <td 
-                              className="muted"
-                              style={{ display: isMobile ? "none" : "table-cell" }}
-                            >
-                              {new Date(m.date).toLocaleString()}
-                            </td>
-                            <td>
-                              <span
-                                className={`status-pill ${
-                                  m.status === "live"
-                                    ? "status-live"
-                                    : m.status === "completed"
-                                    ? "status-completed"
-                                    : "status-upcoming"
-                                }`}
-                                style={{ fontSize: isMobile ? "0.65rem" : "0.7rem" }}
-                              >
-                                {m.status.toUpperCase()}
-                              </span>
-                            </td>
-                            <td style={{ fontSize: isMobile ? "0.75rem" : "0.8rem" }}>
-                              {m.scoreA} : {m.scoreB}
-                            </td>
-                            <td>
-                              <span className="badge" style={{ fontSize: isMobile ? "0.65rem" : "0.7rem" }}>
-                                {m.isPublished ? "Published" : "Hidden"}
-                              </span>
-                            </td>
-                            <td>
-                              <div className="stack gap-sm">
-                                <div 
-                                  className="flex-between"
-                                  style={{
-                                    flexDirection: isMobile ? "column" : "row",
-                                    gap: "0.5rem",
-                                    flexWrap: "wrap",
-                                  }}
-                                >
-                                  <button
-                                    className="btn"
-                                    onClick={() =>
-                                      toggleMatchStatus(m._id, "upcoming")
-                                    }
-                                    style={{
-                                      fontSize: isMobile ? "0.7rem" : "0.8rem",
-                                      padding: isMobile ? "0.4rem 0.6rem" : "0.5rem 0.9rem",
-                                      flex: isMobile ? "1 1 auto" : "none",
-                                      minWidth: isMobile ? "80px" : "auto",
-                                    }}
-                                  >
-                                    Upcoming
-                                  </button>
-                                  <button
-                                    className="btn"
-                                    onClick={() =>
-                                      toggleMatchStatus(m._id, "live", m)
-                                    }
-                                    style={{
-                                      fontSize: isMobile ? "0.7rem" : "0.8rem",
-                                      padding: isMobile ? "0.4rem 0.6rem" : "0.5rem 0.9rem",
-                                      flex: isMobile ? "1 1 auto" : "none",
-                                      minWidth: isMobile ? "80px" : "auto",
-                                    }}
-                                  >
-                                    Live
-                                  </button>
-                                  <button
-                                    className="btn"
-                                    onClick={() =>
-                                      toggleMatchStatus(m._id, "completed")
-                                    }
-                                    style={{
-                                      fontSize: isMobile ? "0.7rem" : "0.8rem",
-                                      padding: isMobile ? "0.4rem 0.6rem" : "0.5rem 0.9rem",
-                                      flex: isMobile ? "1 1 auto" : "none",
-                                      minWidth: isMobile ? "80px" : "auto",
-                                    }}
-                                  >
-                                    Completed
-                                  </button>
-                                </div>
-                                <div 
-                                  className="flex-between"
-                                  style={{
-                                    flexDirection: isMobile ? "column" : "row",
-                                    gap: "0.5rem",
-                                    flexWrap: "wrap",
-                                  }}
-                                >
-                                  {m.status === "live" ? (
-                                    <button
-                                      className="btn btn-primary"
-                                      onClick={() => openScoreEditor(m)}
-                                      style={{
-                                        fontSize: isMobile ? "0.7rem" : "0.8rem",
-                                        padding: isMobile ? "0.4rem 0.6rem" : "0.5rem 0.9rem",
-                                        flex: isMobile ? "1 1 auto" : "none",
-                                        minWidth: isMobile ? "120px" : "auto",
-                                      }}
-                                    >
-                                      Update Score & Goals
-                                    </button>
-                                  ) : (
-                                    <span 
-                                      className="muted" 
-                                      style={{ 
-                                        fontSize: isMobile ? "0.65rem" : "0.75rem",
-                                        fontStyle: "italic",
-                                        padding: "0.5rem",
-                                      }}
-                                    >
-                                      Set to Live to update scores
-                                    </span>
-                                  )}
-                                  <button
-                                    className="btn"
-                                    onClick={() =>
-                                      publishMatch(m._id, !m.isPublished)
-                                    }
-                                    style={{
-                                      fontSize: isMobile ? "0.7rem" : "0.8rem",
-                                      padding: isMobile ? "0.4rem 0.6rem" : "0.5rem 0.9rem",
-                                      flex: isMobile ? "1 1 auto" : "none",
-                                      minWidth: isMobile ? "100px" : "auto",
-                                    }}
-                                  >
-                                    {m.isPublished
-                                      ? "Hide from public"
-                                      : "Publish"}
-                                  </button>
-                                  <button
-                                    className="btn"
-                                    onClick={() => deleteMatch(m._id)}
-                                    style={{
-                                      background: "#ef4444",
-                                      color: "white",
-                                      fontSize: isMobile ? "0.7rem" : "0.8rem",
-                                      padding: isMobile ? "0.4rem 0.6rem" : "0.5rem 0.9rem",
-                                      flex: isMobile ? "1 1 auto" : "none",
-                                      minWidth: isMobile ? "80px" : "auto",
-                                    }}
-                                  >
-                                    Delete
-                                  </button>
-                                </div>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                    </select>
                   </div>
-                )}
-              </div>
-              <div>
-                <div className="flex-between mt-md">
-                  <h2 className="admin-section-title">Players</h2>
-                  <span className="pill-small">
-                    {players.length} players
-                    {players.filter((p) => p.isPublished).length > 0 &&
-                      ` (${
-                        players.filter((p) => p.isPublished).length
-                      } published)`}
-                  </span>
-                </div>
-                {players.length === 0 ? (
-                  <p className="muted mt-sm">
-                    No players added yet. Click &quot;+ Add Player&quot; to
-                    create one.
-                  </p>
-                ) : (
-                  <div className="scroll-y mt-sm">
-                    <div
+                  <div className="field">
+                    <label htmlFor="match-date">Date & Time *</label>
+                    <input
+                      id="match-date"
+                      className="input"
+                      type="datetime-local"
+                      value={matchForm.date}
+                      onChange={(e) =>
+                        setMatchForm({ ...matchForm, date: e.target.value })
+                      }
+                      required
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="match-venue">Venue *</label>
+                    <input
+                      id="match-venue"
+                      className="input"
+                      type="text"
+                      value={matchForm.venue}
+                      onChange={(e) =>
+                        setMatchForm({ ...matchForm, venue: e.target.value })
+                      }
+                      required
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="match-status">Initial Status *</label>
+                    <select
+                      id="match-status"
+                      className="input"
+                      value={matchForm.status}
+                      onChange={(e) =>
+                        setMatchForm({
+                          ...matchForm,
+                          status: e.target.value as
+                            | "upcoming"
+                            | "live"
+                            | "completed",
+                        })
+                      }
+                      required
+                    >
+                      <option value="upcoming">Upcoming</option>
+                      <option value="live">Live</option>
+                      <option value="completed">Completed</option>
+                    </select>
+                  </div>
+                  <div 
+                    className="flex-between"
+                    style={{
+                      flexDirection: isMobile ? "column" : "row",
+                      gap: "0.75rem",
+                    }}
+                  >
+                    <button 
+                      type="submit" 
+                      className="btn btn-primary"
                       style={{
-                        display: "grid",
-                        gridTemplateColumns:
-                          "repeat(auto-fill, minmax(280px, 1fr))",
-                        gap: "1rem",
+                        width: isMobile ? "100%" : "auto",
+                        order: isMobile ? 2 : 1,
                       }}
                     >
-                      {players.map((player) => {
-                        const team =
-                          typeof player.team === "object" ? player.team : null;
-                        return (
-                          <div key={player._id} className="card">
-                            <div style={{ display: "flex", gap: "1rem" }}>
-                              {player.photoUrl ? (
-                                <Image
-                                  src={player.photoUrl}
-                                  alt={player.name}
-                                  width={80}
-                                  height={80}
-                                  style={{
-                                    objectFit: "cover",
-                                    borderRadius: "8px",
-                                    border: "1px solid #ccc",
-                                  }}
-                                  onError={() => {
-                                    // Image failed to load
-                                  }}
-                                />
-                              ) : (
-                                <div
-                                  style={{
-                                    width: "80px",
-                                    height: "80px",
-                                    background: "#e5e7eb",
-                                    borderRadius: "8px",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    fontSize: "1.5rem",
-                                    fontWeight: "bold",
-                                    color: "#6b7280",
-                                  }}
-                                >
-                                  #{player.jerseyNumber}
-                                </div>
-                              )}
-                              <div style={{ flex: 1 }}>
-                                <div className="card-title">{player.name}</div>
-                                <div
-                                  className="muted"
-                                  style={{ fontSize: "0.875rem" }}
-                                >
-                                  #{player.jerseyNumber} · {player.position}
-                                </div>
-                                <div
-                                  className="muted"
-                                  style={{ fontSize: "0.75rem" }}
-                                >
-                                  {team ? team.name : "No team"} ·{" "}
-                                  {player.department}
-                                </div>
-                                <div style={{ marginTop: "0.5rem" }}>
-                                  <span className="badge">
-                                    {player.isPublished
-                                      ? "Published"
-                                      : "Hidden"}
-                                  </span>
-                                </div>
-                                <div
-                                  style={{
-                                    display: "flex",
-                                    gap: "0.5rem",
-                                    marginTop: "0.5rem",
-                                  }}
-                                >
-                                  <button
-                                    className="btn"
-                                    onClick={() => openPlayerForm(player)}
-                                    style={{
-                                      padding: "0.25rem 0.5rem",
-                                      fontSize: "0.875rem",
-                                    }}
-                                  >
-                                    Edit
-                                  </button>
-                                  <button
-                                    className="btn"
-                                    onClick={() =>
-                                      publishPlayer(
-                                        player._id,
-                                        !player.isPublished
-                                      )
-                                    }
-                                    style={{
-                                      padding: "0.25rem 0.5rem",
-                                      fontSize: "0.875rem",
-                                    }}
-                                  >
-                                    {player.isPublished ? "Hide" : "Publish"}
-                                  </button>
-                                  <button
-                                    className="btn"
-                                    onClick={() => deletePlayer(player._id)}
-                                    style={{
-                                      padding: "0.25rem 0.5rem",
-                                      fontSize: "0.875rem",
-                                      background: "#ef4444",
-                                      color: "white",
-                                    }}
-                                  >
-                                    Delete
-                                  </button>
-                                </div>
-                              </div>
+                      Create Match
+                    </button>
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => setShowMatchForm(false)}
+                      style={{
+                        width: isMobile ? "100%" : "auto",
+                        order: isMobile ? 1 : 2,
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            <div>
+              <div className="flex-between">
+                <h2 className="admin-section-title">Matches</h2>
+                <span className="pill-small">
+                  {matches.length} configured fixtures
+                </span>
+              </div>
+              {matches.length === 0 ? (
+                <p className="muted mt-sm">
+                  No matches created yet. Create one above.
+                </p>
+              ) : (
+                <div className="scroll-y mt-sm" style={{ overflowX: "auto" }}>
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th style={{ fontSize: isMobile ? "0.7rem" : "0.78rem" }}>Match</th>
+                        <th style={{ fontSize: isMobile ? "0.7rem" : "0.78rem", display: isMobile ? "none" : "table-cell" }}>Kickoff</th>
+                        <th style={{ fontSize: isMobile ? "0.7rem" : "0.78rem" }}>Status</th>
+                        <th style={{ fontSize: isMobile ? "0.7rem" : "0.78rem" }}>Score</th>
+                        <th style={{ fontSize: isMobile ? "0.7rem" : "0.78rem" }}>Publish</th>
+                        <th style={{ fontSize: isMobile ? "0.7rem" : "0.78rem" }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {matches.map((m) => (
+                        <tr key={m._id}>
+                          <td>
+                            <div className="card-title">
+                              {m.teamA.name} vs {m.teamB.name}
                             </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <div className="flex-between mt-md">
-                  <h2 className="admin-section-title">Teams overview</h2>
-                  <span className="pill-small">{teams.length} teams</span>
-                </div>
-                {teams.length === 0 ? (
-                  <p className="muted mt-sm">
-                    No teams created yet. Create one above.
-                  </p>
-                ) : (
-                  <div className="scroll-y mt-sm">
-                    <table className="table">
-                      <thead>
-                        <tr>
-                          <th>Team</th>
-                          <th>Department</th>
-                          <th>Status</th>
-                          <th>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {teams.map((t) => (
-                          <tr key={t._id}>
-                            <td>{t.name}</td>
-                            <td className="muted">{t.department}</td>
-                            <td>
-                              <span className="badge">
-                                {t.isPublished ? "Published" : "Hidden"}
-                              </span>
-                            </td>
-                            <td>
-                              <div style={{ display: "flex", gap: "0.5rem" }}>
+                            <div className="muted">
+                              {m.venue} · {m.teamA.department} vs{" "}
+                              {m.teamB.department}
+                            </div>
+                          </td>
+                          <td 
+                            className="muted"
+                            style={{ display: isMobile ? "none" : "table-cell" }}
+                          >
+                            {new Date(m.date).toLocaleString()}
+                          </td>
+                          <td>
+                            <span
+                              className={`status-pill ${
+                                m.status === "live"
+                                  ? "status-live"
+                                  : m.status === "completed"
+                                  ? "status-completed"
+                                  : "status-upcoming"
+                              }`}
+                              style={{ fontSize: isMobile ? "0.65rem" : "0.7rem" }}
+                            >
+                              {m.status.toUpperCase()}
+                            </span>
+                          </td>
+                          <td style={{ fontSize: isMobile ? "0.75rem" : "0.8rem" }}>
+                            {m.scoreA} : {m.scoreB}
+                          </td>
+                          <td>
+                            <span className="badge" style={{ fontSize: isMobile ? "0.65rem" : "0.7rem" }}>
+                              {m.isPublished ? "Published" : "Hidden"}
+                            </span>
+                          </td>
+                          <td>
+                            <div className="stack gap-sm">
+                              <div 
+                                className="flex-between"
+                                style={{
+                                  flexDirection: isMobile ? "column" : "row",
+                                  gap: "0.5rem",
+                                  flexWrap: "wrap",
+                                }}
+                              >
                                 <button
                                   className="btn"
                                   onClick={() =>
-                                    publishTeam(t._id, !t.isPublished)
+                                    toggleMatchStatus(m._id, "upcoming")
                                   }
+                                  style={{
+                                    fontSize: isMobile ? "0.7rem" : "0.8rem",
+                                    padding: isMobile ? "0.4rem 0.6rem" : "0.5rem 0.9rem",
+                                    flex: isMobile ? "1 1 auto" : "none",
+                                    minWidth: isMobile ? "80px" : "auto",
+                                  }}
                                 >
-                                  {t.isPublished ? "Hide" : "Publish"}
+                                  Upcoming
                                 </button>
                                 <button
                                   className="btn"
-                                  onClick={() => deleteTeam(t._id)}
+                                  onClick={() =>
+                                    toggleMatchStatus(m._id, "live", m)
+                                  }
                                   style={{
+                                    fontSize: isMobile ? "0.7rem" : "0.8rem",
+                                    padding: isMobile ? "0.4rem 0.6rem" : "0.5rem 0.9rem",
+                                    flex: isMobile ? "1 1 auto" : "none",
+                                    minWidth: isMobile ? "80px" : "auto",
+                                  }}
+                                >
+                                  Live
+                                </button>
+                                <button
+                                  className="btn"
+                                  onClick={() =>
+                                    toggleMatchStatus(m._id, "completed")
+                                  }
+                                  style={{
+                                    fontSize: isMobile ? "0.7rem" : "0.8rem",
+                                    padding: isMobile ? "0.4rem 0.6rem" : "0.5rem 0.9rem",
+                                    flex: isMobile ? "1 1 auto" : "none",
+                                    minWidth: isMobile ? "80px" : "auto",
+                                  }}
+                                >
+                                  Completed
+                                </button>
+                              </div>
+                              <div 
+                                className="flex-between"
+                                style={{
+                                  flexDirection: isMobile ? "column" : "row",
+                                  gap: "0.5rem",
+                                  flexWrap: "wrap",
+                                }}
+                              >
+                                {m.status === "live" ? (
+                                  <button
+                                    className="btn btn-primary"
+                                    onClick={() => openScoreEditor(m)}
+                                    style={{
+                                      fontSize: isMobile ? "0.7rem" : "0.8rem",
+                                      padding: isMobile ? "0.4rem 0.6rem" : "0.5rem 0.9rem",
+                                      flex: isMobile ? "1 1 auto" : "none",
+                                      minWidth: isMobile ? "120px" : "auto",
+                                    }}
+                                  >
+                                    Update Score & Goals
+                                  </button>
+                                ) : (
+                                  <span 
+                                    className="muted" 
+                                    style={{ 
+                                      fontSize: isMobile ? "0.65rem" : "0.75rem",
+                                      fontStyle: "italic",
+                                      padding: "0.5rem",
+                                    }}
+                                  >
+                                    Set to Live to update scores
+                                  </span>
+                                )}
+                                <button
+                                  className="btn"
+                                  onClick={() =>
+                                    publishMatch(m._id, !m.isPublished)
+                                  }
+                                  style={{
+                                    fontSize: isMobile ? "0.7rem" : "0.8rem",
+                                    padding: isMobile ? "0.4rem 0.6rem" : "0.5rem 0.9rem",
+                                    flex: isMobile ? "1 1 auto" : "none",
+                                    minWidth: isMobile ? "100px" : "auto",
+                                  }}
+                                >
+                                  {m.isPublished
+                                    ? "Hide from public"
+                                    : "Publish"}
+                                </button>
+                                <button
+                                  className="btn"
+                                  onClick={() => deleteMatch(m._id)}
+                                  style={{
+                                    background: "#ef4444",
+                                    color: "white",
+                                    fontSize: isMobile ? "0.7rem" : "0.8rem",
+                                    padding: isMobile ? "0.4rem 0.6rem" : "0.5rem 0.9rem",
+                                    flex: isMobile ? "1 1 auto" : "none",
+                                    minWidth: isMobile ? "80px" : "auto",
+                                  }}
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+            <div>
+              <div className="flex-between mt-md">
+                <h2 className="admin-section-title">Players</h2>
+                <span className="pill-small">
+                  {players.length} players
+                  {players.filter((p) => p.isPublished).length > 0 &&
+                    ` (${
+                      players.filter((p) => p.isPublished).length
+                    } published)`}
+                </span>
+              </div>
+              {players.length === 0 ? (
+                <p className="muted mt-sm">
+                  No players added yet. Click &quot;+ Add Player&quot; to
+                  create one.
+                </p>
+              ) : (
+                <div className="scroll-y mt-sm">
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns:
+                        "repeat(auto-fill, minmax(280px, 1fr))",
+                      gap: "1rem",
+                    }}
+                  >
+                    {players.map((player) => {
+                      const team =
+                        typeof player.team === "object" ? player.team : null;
+                      return (
+                        <div key={player._id} className="card">
+                          <div style={{ display: "flex", gap: "1rem" }}>
+                            {player.photoUrl ? (
+                              <Image
+                                src={player.photoUrl}
+                                alt={player.name}
+                                width={80}
+                                height={80}
+                                style={{
+                                  objectFit: "cover",
+                                  borderRadius: "8px",
+                                  border: "1px solid #ccc",
+                                }}
+                                onError={() => {
+                                  // Image failed to load
+                                }}
+                              />
+                            ) : (
+                              <div
+                                style={{
+                                  width: "80px",
+                                  height: "80px",
+                                  background: "#e5e7eb",
+                                  borderRadius: "8px",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  fontSize: "1.5rem",
+                                  fontWeight: "bold",
+                                  color: "#6b7280",
+                                }}
+                              >
+                                #{player.jerseyNumber}
+                              </div>
+                            )}
+                            <div style={{ flex: 1 }}>
+                              <div className="card-title">{player.name}</div>
+                              <div
+                                className="muted"
+                                style={{ fontSize: "0.875rem" }}
+                              >
+                                #{player.jerseyNumber} · {player.position}
+                              </div>
+                              <div
+                                className="muted"
+                                style={{ fontSize: "0.75rem" }}
+                              >
+                                {team ? team.name : "No team"} ·{" "}
+                                {player.department}
+                              </div>
+                              <div style={{ marginTop: "0.5rem" }}>
+                                <span className="badge">
+                                  {player.isPublished
+                                    ? "Published"
+                                    : "Hidden"}
+                                </span>
+                              </div>
+                              <div
+                                style={{
+                                  display: "flex",
+                                  gap: "0.5rem",
+                                  marginTop: "0.5rem",
+                                }}
+                              >
+                                <button
+                                  className="btn"
+                                  onClick={() => openPlayerForm(player)}
+                                  style={{
+                                    padding: "0.25rem 0.5rem",
+                                    fontSize: "0.875rem",
+                                  }}
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  className="btn"
+                                  onClick={() =>
+                                    publishPlayer(
+                                      player._id,
+                                      !player.isPublished
+                                    )
+                                  }
+                                  style={{
+                                    padding: "0.25rem 0.5rem",
+                                    fontSize: "0.875rem",
+                                  }}
+                                >
+                                  {player.isPublished ? "Hide" : "Publish"}
+                                </button>
+                                <button
+                                  className="btn"
+                                  onClick={() => deletePlayer(player._id)}
+                                  style={{
+                                    padding: "0.25rem 0.5rem",
+                                    fontSize: "0.875rem",
                                     background: "#ef4444",
                                     color: "white",
                                   }}
@@ -2034,141 +2007,474 @@ export default function AdminDashboardPage() {
                                   Delete
                                 </button>
                               </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                )}
-              </div>
-
-              <div>
-                <div className="flex-between mt-md">
-                  <h2 className="admin-section-title">Points Table</h2>
-                  <span className="pill-small">
-                    {pointsTable.length} teams
-                    {pointsTable.some((p) => p.isPublished) && " (Published)"}
-                  </span>
                 </div>
-                {pointsTable.length === 0 ? (
-                  <div className="card mt-sm">
-                    <p className="muted">
-                      Points table is empty. Complete some matches and click
-                      &quot;Recalculate &amp; Publish&quot; to generate the
-                      table.
-                    </p>
-                    <p
-                      className="muted"
-                      style={{ fontSize: "0.875rem", marginTop: "0.5rem" }}
-                    >
-                      Completed matches:{" "}
-                      {matches.filter((m) => m.status === "completed").length}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="scroll-y mt-sm">
-                    <table className="table">
-                      <thead>
-                        <tr>
-                          <th>#</th>
-                          <th>Team</th>
-                          <th>P</th>
-                          <th>W</th>
-                          <th>D</th>
-                          <th>L</th>
-                          <th>GF</th>
-                          <th>GA</th>
-                          <th>GD</th>
-                          <th>Pts</th>
-                          <th>Status</th>
+              )}
+            </div>
+
+            <div>
+              <div className="flex-between mt-md">
+                <h2 className="admin-section-title">Teams overview</h2>
+                <span className="pill-small">{teams.length} teams</span>
+              </div>
+              {teams.length === 0 ? (
+                <p className="muted mt-sm">
+                  No teams created yet. Create one above.
+                </p>
+              ) : (
+                <div className="scroll-y mt-sm">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Team</th>
+                        <th>Department</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {teams.map((t) => (
+                        <tr key={t._id}>
+                          <td>{t.name}</td>
+                          <td className="muted">{t.department}</td>
+                          <td>
+                            <span className="badge">
+                              {t.isPublished ? "Published" : "Hidden"}
+                            </span>
+                          </td>
+                          <td>
+                            <div style={{ display: "flex", gap: "0.5rem" }}>
+                              <button
+                                className="btn"
+                                onClick={() =>
+                                  publishTeam(t._id, !t.isPublished)
+                                }
+                              >
+                                {t.isPublished ? "Hide" : "Publish"}
+                              </button>
+                              <button
+                                className="btn"
+                                onClick={() => deleteTeam(t._id)}
+                                style={{
+                                  background: "#ef4444",
+                                  color: "white",
+                                }}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody>
-                        {pointsTable.map((row, index) => (
-                          <tr key={row._id}>
-                            <td>{index + 1}</td>
-                            <td>
-                              <div>
-                                {row.team &&
-                                row.team !== null &&
-                                typeof row.team === "object"
-                                  ? row.team.name || "Unknown Team"
-                                  : "Unknown Team (Deleted)"}
-                              </div>
-                              <div className="muted text-xs">
-                                {row.team &&
-                                row.team !== null &&
-                                typeof row.team === "object" &&
-                                row.team.department
-                                  ? `${row.team.department} Department`
-                                  : ""}
-                              </div>
-                            </td>
-                            <td>{row.played}</td>
-                            <td>{row.wins}</td>
-                            <td>{row.draws}</td>
-                            <td>{row.losses}</td>
-                            <td>{row.goalsFor}</td>
-                            <td>{row.goalsAgainst}</td>
-                            <td>{row.goalDifference}</td>
-                            <td>
-                              <strong>{row.points}</strong>
-                            </td>
-                            <td>
-                              <span className="badge">
-                                {row.isPublished ? "Published" : "Hidden"}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <div className="flex-between mt-md">
+                <h2 className="admin-section-title">Points Table</h2>
+                <span className="pill-small">
+                  {pointsTable.length} teams
+                  {pointsTable.some((p) => p.isPublished) && " (Published)"}
+                </span>
+              </div>
+              {pointsTable.length === 0 ? (
+                <div className="card mt-sm">
+                  <p className="muted">
+                    Points table is empty. Complete some matches and click
+                    &quot;Recalculate &amp; Publish&quot; to generate the
+                    table.
+                  </p>
+                  <p
+                    className="muted"
+                    style={{ fontSize: "0.875rem", marginTop: "0.5rem" }}
+                  >
+                    Completed matches:{" "}
+                    {matches.filter((m) => m.status === "completed").length}
+                  </p>
+                </div>
+              ) : (
+                <div className="scroll-y mt-sm">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Team</th>
+                        <th>P</th>
+                        <th>W</th>
+                        <th>D</th>
+                        <th>L</th>
+                        <th>GF</th>
+                        <th>GA</th>
+                        <th>GD</th>
+                        <th>Pts</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pointsTable.map((row, index) => (
+                        <tr key={row._id}>
+                          <td>{index + 1}</td>
+                          <td>
+                            <div>
+                              {row.team &&
+                              row.team !== null &&
+                              typeof row.team === "object"
+                                ? row.team.name || "Unknown Team"
+                                : "Unknown Team (Deleted)"}
+                            </div>
+                            <div className="muted text-xs">
+                              {row.team &&
+                              row.team !== null &&
+                              typeof row.team === "object" &&
+                              row.team.department
+                                ? `${row.team.department} Department`
+                                : ""}
+                            </div>
+                          </td>
+                          <td>{row.played}</td>
+                          <td>{row.wins}</td>
+                          <td>{row.draws}</td>
+                          <td>{row.losses}</td>
+                          <td>{row.goalsFor}</td>
+                          <td>{row.goalsAgainst}</td>
+                          <td>{row.goalDifference}</td>
+                          <td>
+                            <strong>{row.points}</strong>
+                          </td>
+                          <td>
+                            <span className="badge">
+                              {row.isPublished ? "Published" : "Hidden"}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </section>
+    </div>
+
+    {/* Lineup Selection Modal */}
+    {showLineupModal && matchForLineup && (
+      <div
+        style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: "rgba(0, 0, 0, 0.7)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 2000,
+          padding: isMobile ? "1rem" : "2rem",
+          overflow: "auto",
+        }}
+        onClick={() => {
+          setShowLineupModal(false);
+          setMatchForLineup(null);
+        }}
+      >
+        <div
+          className="card"
+          style={{
+            maxWidth: isMobile ? "100%" : "900px",
+            width: "100%",
+            maxHeight: "90vh",
+            overflow: "auto",
+            position: "relative",
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex-between mb-md">
+            <h2 className="admin-section-title">
+              Select Starting Lineup: {matchForLineup.teamA.name} vs {matchForLineup.teamB.name}
+            </h2>
+            <button
+              className="btn"
+              onClick={() => {
+                setShowLineupModal(false);
+                setMatchForLineup(null);
+              }}
+              style={{
+                background: "none",
+                border: "none",
+                fontSize: "1.5rem",
+                cursor: "pointer",
+                color: "#6b7280",
+                padding: "0.5rem",
+              }}
+            >
+              ×
+            </button>
+          </div>
+
+          <div className="stack gap-lg">
+            {/* Team A Lineup */}
+            <div>
+              <h3 style={{ fontSize: "1rem", marginBottom: "1rem", color: "#e5e7eb" }}>
+                {matchForLineup.teamA.name} - Select 1 Goalkeeper + 6 Players
+              </h3>
+              <div className="stack gap-md">
+                <div>
+                  <label style={{ fontSize: "0.875rem", color: "var(--muted)", marginBottom: "0.5rem", display: "block" }}>
+                    Goalkeeper *
+                  </label>
+                  <select
+                    className="input"
+                    value={lineupData.teamA.goalkeeper}
+                    onChange={(e) => {
+                      const newGoalkeeper = e.target.value;
+                      setLineupData({
+                        ...lineupData,
+                        teamA: {
+                          ...lineupData.teamA,
+                          goalkeeper: newGoalkeeper,
+                          players: lineupData.teamA.players.filter((id) => id !== newGoalkeeper),
+                        },
+                      });
+                    }}
+                    style={{ width: "100%" }}
+                  >
+                    <option value="">Select Goalkeeper</option>
+                    {players
+                      .filter(
+                        (p) =>
+                          typeof p.team === "object"
+                            ? p.team._id === matchForLineup.teamA._id
+                            : p.team === matchForLineup.teamA._id
+                      )                        .filter((p) => !lineupData.teamA.players.includes(p._id))
+                      .map((p) => (
+                        <option key={p._id} value={p._id}>
+                          #{p.jerseyNumber} {p.name} - {p.position}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.875rem", color: "var(--muted)", marginBottom: "0.5rem", display: "block" }}>
+                    Players (Select 6) - {lineupData.teamA.players.length}/6
+                  </label>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: isMobile ? "1fr" : "repeat(2, 1fr)",
+                      gap: "0.5rem",
+                      maxHeight: "300px",
+                      overflowY: "auto",
+                      padding: "0.5rem",
+                      background: "rgba(15, 23, 42, 0.5)",
+                      borderRadius: "0.5rem",
+                    }}
+                  >
+                    {players
+                      .filter(
+                        (p) =>
+                          typeof p.team === "object"
+                            ? p.team._id === matchForLineup.teamA._id
+                            : p.team === matchForLineup.teamA._id
+                      )
+                      .filter((p) => p._id !== lineupData.teamA.goalkeeper)
+                      .map((p) => {
+                        const isSelected = lineupData.teamA.players.includes(p._id);
+                        return (
+                          <label
+                            key={p._id}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "0.5rem",
+                              padding: "0.5rem",
+                              background: isSelected ? "rgba(34, 197, 94, 0.2)" : "rgba(15, 23, 42, 0.9)",
+                              border: isSelected ? "1px solid #22c55e" : "1px solid rgba(148, 163, 184, 0.4)",
+                              borderRadius: "0.5rem",
+                              cursor: "pointer",
+                              fontSize: "0.875rem",
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  if (lineupData.teamA.players.length < 6) {
+                                    setLineupData({
+                                      ...lineupData,
+                                      teamA: {
+                                        ...lineupData.teamA,
+                                        players: [...lineupData.teamA.players, p._id],
+                                        goalkeeper: lineupData.teamA.goalkeeper === p._id ? "" : lineupData.teamA.goalkeeper,
+                                      },
+                                    });
+                                  }
+                                } else {
+                                  setLineupData({
+                                    ...lineupData,
+                                    teamA: {
+                                      ...lineupData.teamA,
+                                      players: lineupData.teamA.players.filter((id) => id !== p._id),
+                                    },
+                                  });
+                                }
+                              }}
+                              disabled={!isSelected && (lineupData.teamA.players.length >= 6 || p._id === lineupData.teamA.goalkeeper)}
+                            />
+                            <span>
+                              #{p.jerseyNumber} {p.name} - {p.position}
+                            </span>
+                          </label>
+                        );
+                      })}
                   </div>
-                )}
+                </div>
               </div>
             </div>
-          )}
-        </section>
-      </div>
 
-      {/* Lineup Selection Modal */}
-      {showLineupModal && matchForLineup && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: "rgba(0, 0, 0, 0.7)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 2000,
-            padding: isMobile ? "1rem" : "2rem",
-            overflow: "auto",
-          }}
-          onClick={() => {
-            setShowLineupModal(false);
-            setMatchForLineup(null);
-          }}
-        >
-          <div
-            className="card"
-            style={{
-              maxWidth: isMobile ? "100%" : "900px",
-              width: "100%",
-              maxHeight: "90vh",
-              overflow: "auto",
-              position: "relative",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex-between mb-md">
-              <h2 className="admin-section-title">
-                Select Starting Lineup: {matchForLineup.teamA.name} vs {matchForLineup.teamB.name}
-              </h2>
+            {/* Team B Lineup */}
+            <div>
+              <h3 style={{ fontSize: "1rem", marginBottom: "1rem", color: "#e5e7eb" }}>
+                {matchForLineup.teamB.name} - Select 1 Goalkeeper + 6 Players
+              </h3>
+              <div className="stack gap-md">
+                <div>
+                  <label style={{ fontSize: "0.875rem", color: "var(--muted)", marginBottom: "0.5rem", display: "block" }}>
+                    Goalkeeper *
+                  </label>
+                  <select
+                    className="input"
+                    value={lineupData.teamB.goalkeeper}
+                    onChange={(e) => {
+                      const newGoalkeeper = e.target.value;
+                      setLineupData({
+                        ...lineupData,
+                        teamB: {
+                          ...lineupData.teamB,
+                          goalkeeper: newGoalkeeper,
+                          players: lineupData.teamB.players.filter((id) => id !== newGoalkeeper),
+                        },
+                      });
+                    }}
+                    style={{ width: "100%" }}
+                  >
+                    <option value="">Select Goalkeeper</option>
+                    {players
+                      .filter(
+                        (p) =>
+                          typeof p.team === "object"
+                            ? p.team._id === matchForLineup.teamB._id
+                            : p.team === matchForLineup.teamB._id
+                      )
+                      .filter((p) => !lineupData.teamB.players.includes(p._id))
+                      .map((p) => (
+                        <option key={p._id} value={p._id}>
+                          #{p.jerseyNumber} {p.name} - {p.position}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.875rem", color: "var(--muted)", marginBottom: "0.5rem", display: "block" }}>
+                    Players (Select 6) - {lineupData.teamB.players.length}/6
+                  </label>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: isMobile ? "1fr" : "repeat(2, 1fr)",
+                      gap: "0.5rem",
+                      maxHeight: "300px",
+                      overflowY: "auto",
+                      padding: "0.5rem",
+                      background: "rgba(15, 23, 42, 0.5)",
+                      borderRadius: "0.5rem",
+                    }}
+                  >
+                    {players
+                      .filter(
+                        (p) =>
+                          typeof p.team === "object"
+                            ? p.team._id === matchForLineup.teamB._id
+                            : p.team === matchForLineup.teamB._id
+                      )
+                      .filter((p) => p._id !== lineupData.teamB.goalkeeper)
+                      .map((p) => {
+                        const isSelected = lineupData.teamB.players.includes(p._id);
+                        return (
+                          <label
+                            key={p._id}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "0.5rem",
+                              padding: "0.5rem",
+                              background: isSelected ? "rgba(34, 197, 94, 0.2)" : "rgba(15, 23, 42, 0.9)",
+                              border: isSelected ? "1px solid #22c55e" : "1px solid rgba(148, 163, 184, 0.4)",
+                              borderRadius: "0.5rem",
+                              cursor: "pointer",
+                              fontSize: "0.875rem",
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  if (lineupData.teamB.players.length < 6) {
+                                    setLineupData({
+                                      ...lineupData,
+                                      teamB: {
+                                        ...lineupData.teamB,
+                                        players: [...lineupData.teamB.players, p._id],
+                                        goalkeeper: lineupData.teamB.goalkeeper === p._id ? "" : lineupData.teamB.goalkeeper,
+                                      },
+                                    });
+                                  }
+                                } else {
+                                  setLineupData({
+                                    ...lineupData,
+                                    teamB: {
+                                      ...lineupData.teamB,
+                                      players: lineupData.teamB.players.filter((id) => id !== p._id),
+                                    },
+                                  });
+                                }
+                              }}
+                              disabled={!isSelected && (lineupData.teamB.players.length >= 6 || p._id === lineupData.teamB.goalkeeper)}
+                            />
+                            <span>
+                              #{p.jerseyNumber} {p.name} - {p.position}
+                            </span>
+                          </label>
+                        );
+                      })}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div
+              className="flex-between"
+              style={{
+                flexDirection: isMobile ? "column" : "row",
+                gap: "0.75rem",
+                marginTop: "1rem",
+                paddingTop: "1rem",
+                borderTop: "1px solid rgba(148, 163, 184, 0.2)",
+              }}
+            >
               <button
                 className="btn"
                 onClick={() => {
@@ -2176,306 +2482,33 @@ export default function AdminDashboardPage() {
                   setMatchForLineup(null);
                 }}
                 style={{
-                  background: "none",
-                  border: "none",
-                  fontSize: "1.5rem",
-                  cursor: "pointer",
-                  color: "#6b7280",
-                  padding: "0.5rem",
+                  width: isMobile ? "100%" : "auto",
+                  order: isMobile ? 1 : 2,
                 }}
               >
-                ×
+                Cancel
               </button>
-            </div>
-
-            <div className="stack gap-lg">
-              {/* Team A Lineup */}
-              <div>
-                <h3 style={{ fontSize: "1rem", marginBottom: "1rem", color: "#e5e7eb" }}>
-                  {matchForLineup.teamA.name} - Select 1 Goalkeeper + 6 Players
-                </h3>
-                <div className="stack gap-md">
-                  <div>
-                    <label style={{ fontSize: "0.875rem", color: "var(--muted)", marginBottom: "0.5rem", display: "block" }}>
-                      Goalkeeper *
-                    </label>
-                    <select
-                      className="input"
-                      value={lineupData.teamA.goalkeeper}
-                      onChange={(e) => {
-                        const newGoalkeeper = e.target.value;
-                        setLineupData({
-                          ...lineupData,
-                          teamA: {
-                            ...lineupData.teamA,
-                            goalkeeper: newGoalkeeper,
-                            players: lineupData.teamA.players.filter((id) => id !== newGoalkeeper),
-                          },
-                        });
-                      }}
-                      style={{ width: "100%" }}
-                    >
-                      <option value="">Select Goalkeeper</option>
-                      {players
-                        .filter(
-                          (p) =>
-                            typeof p.team === "object"
-                              ? p.team._id === matchForLineup.teamA._id
-                              : p.team === matchForLineup.teamA._id
-                        )
-                        .filter((p) => !lineupData.teamA.players.includes(p._id))
-                        .map((p) => (
-                          <option key={p._id} value={p._id}>
-                            #{p.jerseyNumber} {p.name} - {p.position}
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ fontSize: "0.875rem", color: "var(--muted)", marginBottom: "0.5rem", display: "block" }}>
-                      Players (Select 6) - {lineupData.teamA.players.length}/6
-                    </label>
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: isMobile ? "1fr" : "repeat(2, 1fr)",
-                        gap: "0.5rem",
-                        maxHeight: "300px",
-                        overflowY: "auto",
-                        padding: "0.5rem",
-                        background: "rgba(15, 23, 42, 0.5)",
-                        borderRadius: "0.5rem",
-                      }}
-                    >
-                      {players
-                        .filter(
-                          (p) =>
-                            typeof p.team === "object"
-                              ? p.team._id === matchForLineup.teamA._id
-                              : p.team === matchForLineup.teamA._id
-                        )
-                        .filter((p) => p._id !== lineupData.teamA.goalkeeper)
-                        .map((p) => {
-                          const isSelected = lineupData.teamA.players.includes(p._id);
-                          return (
-                            <label
-                              key={p._id}
-                              style={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: "0.5rem",
-                                padding: "0.5rem",
-                                background: isSelected ? "rgba(34, 197, 94, 0.2)" : "rgba(15, 23, 42, 0.9)",
-                                border: isSelected ? "1px solid #22c55e" : "1px solid rgba(148, 163, 184, 0.4)",
-                                borderRadius: "0.5rem",
-                                cursor: "pointer",
-                                fontSize: "0.875rem",
-                              }}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    if (lineupData.teamA.players.length < 6) {
-                                      setLineupData({
-                                        ...lineupData,
-                                        teamA: {
-                                          ...lineupData.teamA,
-                                          players: [...lineupData.teamA.players, p._id],
-                                          goalkeeper: lineupData.teamA.goalkeeper === p._id ? "" : lineupData.teamA.goalkeeper,
-                                        },
-                                      });
-                                    }
-                                  } else {
-                                    setLineupData({
-                                      ...lineupData,
-                                      teamA: {
-                                        ...lineupData.teamA,
-                                        players: lineupData.teamA.players.filter((id) => id !== p._id),
-                                      },
-                                    });
-                                  }
-                                }}
-                                disabled={!isSelected && (lineupData.teamA.players.length >= 6 || p._id === lineupData.teamA.goalkeeper)}
-                              />
-                              <span>
-                                #{p.jerseyNumber} {p.name} - {p.position}
-                              </span>
-                            </label>
-                          );
-                        })}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Team B Lineup */}
-              <div>
-                <h3 style={{ fontSize: "1rem", marginBottom: "1rem", color: "#e5e7eb" }}>
-                  {matchForLineup.teamB.name} - Select 1 Goalkeeper + 6 Players
-                </h3>
-                <div className="stack gap-md">
-                  <div>
-                    <label style={{ fontSize: "0.875rem", color: "var(--muted)", marginBottom: "0.5rem", display: "block" }}>
-                      Goalkeeper *
-                    </label>
-                    <select
-                      className="input"
-                      value={lineupData.teamB.goalkeeper}
-                      onChange={(e) => {
-                        const newGoalkeeper = e.target.value;
-                        setLineupData({
-                          ...lineupData,
-                          teamB: {
-                            ...lineupData.teamB,
-                            goalkeeper: newGoalkeeper,
-                            players: lineupData.teamB.players.filter((id) => id !== newGoalkeeper),
-                          },
-                        });
-                      }}
-                      style={{ width: "100%" }}
-                    >
-                      <option value="">Select Goalkeeper</option>
-                      {players
-                        .filter(
-                          (p) =>
-                            typeof p.team === "object"
-                              ? p.team._id === matchForLineup.teamB._id
-                              : p.team === matchForLineup.teamB._id
-                        )
-                        .filter((p) => !lineupData.teamB.players.includes(p._id))
-                        .map((p) => (
-                          <option key={p._id} value={p._id}>
-                            #{p.jerseyNumber} {p.name} - {p.position}
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ fontSize: "0.875rem", color: "var(--muted)", marginBottom: "0.5rem", display: "block" }}>
-                      Players (Select 6) - {lineupData.teamB.players.length}/6
-                    </label>
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: isMobile ? "1fr" : "repeat(2, 1fr)",
-                        gap: "0.5rem",
-                        maxHeight: "300px",
-                        overflowY: "auto",
-                        padding: "0.5rem",
-                        background: "rgba(15, 23, 42, 0.5)",
-                        borderRadius: "0.5rem",
-                      }}
-                    >
-                      {players
-                        .filter(
-                          (p) =>
-                            typeof p.team === "object"
-                              ? p.team._id === matchForLineup.teamB._id
-                              : p.team === matchForLineup.teamB._id
-                        )
-                        .filter((p) => p._id !== lineupData.teamB.goalkeeper)
-                        .map((p) => {
-                          const isSelected = lineupData.teamB.players.includes(p._id);
-                          return (
-                            <label
-                              key={p._id}
-                              style={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: "0.5rem",
-                                padding: "0.5rem",
-                                background: isSelected ? "rgba(34, 197, 94, 0.2)" : "rgba(15, 23, 42, 0.9)",
-                                border: isSelected ? "1px solid #22c55e" : "1px solid rgba(148, 163, 184, 0.4)",
-                                borderRadius: "0.5rem",
-                                cursor: "pointer",
-                                fontSize: "0.875rem",
-                              }}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    if (lineupData.teamB.players.length < 6) {
-                                      setLineupData({
-                                        ...lineupData,
-                                        teamB: {
-                                          ...lineupData.teamB,
-                                          players: [...lineupData.teamB.players, p._id],
-                                          goalkeeper: lineupData.teamB.goalkeeper === p._id ? "" : lineupData.teamB.goalkeeper,
-                                        },
-                                      });
-                                    }
-                                  } else {
-                                    setLineupData({
-                                      ...lineupData,
-                                      teamB: {
-                                        ...lineupData.teamB,
-                                        players: lineupData.teamB.players.filter((id) => id !== p._id),
-                                      },
-                                    });
-                                  }
-                                }}
-                                disabled={!isSelected && (lineupData.teamB.players.length >= 6 || p._id === lineupData.teamB.goalkeeper)}
-                              />
-                              <span>
-                                #{p.jerseyNumber} {p.name} - {p.position}
-                              </span>
-                            </label>
-                          );
-                        })}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div
-                className="flex-between"
+              <button
+                className="btn btn-primary"
+                onClick={confirmLineupAndSetLive}
+                disabled={
+                  !lineupData.teamA.goalkeeper ||
+                  lineupData.teamA.players.length !== 6 ||
+                  !lineupData.teamB.goalkeeper ||
+                  lineupData.teamB.players.length !== 6
+                }
                 style={{
-                  flexDirection: isMobile ? "column" : "row",
-                  gap: "0.75rem",
-                  marginTop: "1rem",
-                  paddingTop: "1rem",
-                  borderTop: "1px solid rgba(148, 163, 184, 0.2)",
+                  width: isMobile ? "100%" : "auto",
+                  order: isMobile ? 2 : 1,
                 }}
               >
-                <button
-                  className="btn"
-                  onClick={() => {
-                    setShowLineupModal(false);
-                    setMatchForLineup(null);
-                  }}
-                  style={{
-                    width: isMobile ? "100%" : "auto",
-                    order: isMobile ? 1 : 2,
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  className="btn btn-primary"
-                  onClick={confirmLineupAndSetLive}
-                  disabled={
-                    !lineupData.teamA.goalkeeper ||
-                    lineupData.teamA.players.length !== 6 ||
-                    !lineupData.teamB.goalkeeper ||
-                    lineupData.teamB.players.length !== 6
-                  }
-                  style={{
-                    width: isMobile ? "100%" : "auto",
-                    order: isMobile ? 2 : 1,
-                  }}
-                >
-                  Confirm Lineup & Set Live
-                </button>
-              </div>
+                Confirm Lineup & Set Live
+              </button>
             </div>
           </div>
         </div>
-      )}
-    </div>
-  );
+      </div>
+    )}
+  </div>
+);
 }
