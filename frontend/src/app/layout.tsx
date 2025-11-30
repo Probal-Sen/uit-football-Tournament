@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { NavBar } from "@/components/NavBar";
@@ -20,14 +21,16 @@ export default function RootLayout({
         <AuthProvider>
           <div className="app-shell">
             <header className="app-header">
-              <div className="brand">
-                <span className="brand-title">
-                  UIT Football Tournament
-                </span>
-                <span className="brand-subtitle">
-                  Inter-Department Championship
-                </span>
-              </div>
+              <Link href="/" style={{ textDecoration: "none", color: "inherit" }}>
+                <div className="brand">
+                  <span className="brand-title">
+                    UIT Football Tournament
+                  </span>
+                  <span className="brand-subtitle">
+                    Inter-Department Championship
+                  </span>
+                </div>
+              </Link>
               <NavBar />
             </header>
             <main className="app-main">{children}</main>

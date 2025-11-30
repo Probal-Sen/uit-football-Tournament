@@ -129,7 +129,17 @@ router.post('/', auth, async (req, res) => {
 // Admin: update match
 router.put('/:id', auth, async (req, res) => {
   try {
-    const match = await Match.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const match = await Match.findByIdAndUpdate(
+      req.params.id, 
+      req.body, 
+      { new: true }
+    ).populate('teamA teamB goals.player goals.team teamALineup.goalkeeper teamALineup.players teamBLineup.goalkeeper teamBLineup.players');
+
+    if (!match) return res.status(404).json({ message: 'Match not found' });
+
+    const io = req.app.get('io');
+    io.emit('matchUpdated', match);
+
     res.json(match);
   } catch (err) {
     console.error(err);
@@ -156,12 +166,24 @@ router.post('/:id/publish', auth, async (req, res) => {
 // Admin: set status (upcoming/live/completed)
 router.post('/:id/status', auth, async (req, res) => {
   try {
-    const { status } = req.body;
+    const { status, teamALineup, teamBLineup } = req.body;
+    const update = { status };
+    
+    // If setting to live, include lineup data
+    if (status === 'live') {
+      if (teamALineup) {
+        update.teamALineup = teamALineup;
+      }
+      if (teamBLineup) {
+        update.teamBLineup = teamBLineup;
+      }
+    }
+    
     const match = await Match.findByIdAndUpdate(
       req.params.id,
-      { status },
+      update,
       { new: true }
-    ).populate('teamA teamB goals.player goals.team');
+    ).populate('teamA teamB goals.player goals.team teamALineup.goalkeeper teamALineup.players teamBLineup.goalkeeper teamBLineup.players');
 
     if (!match) return res.status(404).json({ message: 'Match not found' });
 
@@ -200,7 +222,7 @@ router.post('/:id/score', auth, async (req, res) => {
 
     const match = await Match.findByIdAndUpdate(req.params.id, update, {
       new: true,
-    }).populate('teamA teamB goals.player goals.team');
+    }).populate('teamA teamB goals.player goals.team teamALineup.goalkeeper teamALineup.players teamBLineup.goalkeeper teamBLineup.players substitutions.team substitutions.playerOut substitutions.playerIn');
 
     if (!match) return res.status(404).json({ message: 'Match not found' });
 

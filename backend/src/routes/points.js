@@ -140,6 +140,10 @@ router.post('/recalculate', auth, async (req, res) => {
     const rows = await PointsRow.find()
       .populate('team')
       .sort({ points: -1, goalDifference: -1, goalsFor: -1 });
+    
+    const io = req.app.get('io');
+    io.emit('pointsTableUpdated', rows);
+    
     res.json(rows);
   } catch (err) {
     console.error(err);
@@ -155,6 +159,8 @@ router.post('/publish', auth, async (req, res) => {
     const rows = await PointsRow.find()
       .populate('team')
       .sort({ points: -1, goalDifference: -1, goalsFor: -1 });
+    const io = req.app.get('io');
+    io.emit('pointsTableUpdated', rows);
     res.json(rows);
   } catch (err) {
     console.error(err);

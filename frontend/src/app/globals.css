@@ -65,6 +65,12 @@ a {
 .brand {
   display: flex;
   flex-direction: column;
+  cursor: pointer;
+  transition: opacity 0.18s ease;
+}
+
+.brand:hover {
+  opacity: 0.8;
 }
 
 .brand-title {
@@ -694,6 +700,18 @@ a {
 
   .admin-layout {
     grid-template-columns: minmax(0, 1fr);
+    display: flex !important;
+    flex-direction: column;
+  }
+
+  .admin-sidebar {
+    width: 100% !important;
+    order: 2;
+  }
+
+  .admin-main {
+    width: 100% !important;
+    order: 1;
   }
 
   .app-header {
@@ -704,6 +722,24 @@ a {
   .top-nav {
     flex-wrap: wrap;
     justify-content: flex-start;
+  }
+
+  .table {
+    font-size: 0.7rem;
+  }
+
+  .table th,
+  .table td {
+    padding: 0.35rem 0.4rem;
+  }
+
+  .admin-section-title {
+    font-size: 0.8rem !important;
+  }
+
+  .btn {
+    font-size: 0.75rem;
+    padding: 0.5rem 0.75rem;
   }
 }
 
@@ -719,4 +755,39 @@ a {
   .card-grid {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  .table {
+    font-size: 0.7rem;
+  }
+
+  .table th,
+  .table td {
+    padding: 0.35rem 0.4rem;
+  }
+
+  .section-heading {
+    font-size: 0.85rem !important;
+  }
+
+  .card {
+    padding: 0.75rem 0.7rem;
+  }
+
+  .stack {
+    gap: 0.6rem;
+  }
+}
+
+.scroll-x {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.scroll-x::-webkit-scrollbar {
+  height: 6px;
+}
+
+.scroll-x::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.5);
+  border-radius: 999px;
 }

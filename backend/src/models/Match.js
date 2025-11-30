@@ -23,6 +23,20 @@ const matchSchema = new mongoose.Schema(
     scoreA: { type: Number, default: 0 },
     scoreB: { type: Number, default: 0 },
     goals: [goalSchema],
+    teamALineup: {
+      goalkeeper: { type: mongoose.Schema.Types.ObjectId, ref: 'Player' },
+      players: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Player' }],
+    },
+    teamBLineup: {
+      goalkeeper: { type: mongoose.Schema.Types.ObjectId, ref: 'Player' },
+      players: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Player' }],
+    },
+    substitutions: [{
+      team: { type: mongoose.Schema.Types.ObjectId, ref: 'Team' },
+      playerOut: { type: mongoose.Schema.Types.ObjectId, ref: 'Player' },
+      playerIn: { type: mongoose.Schema.Types.ObjectId, ref: 'Player' },
+      minute: { type: Number },
+    }],
     isPublished: { type: Boolean, default: false },
   },
   { timestamps: true }
