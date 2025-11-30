@@ -463,20 +463,32 @@ export default function AdminDashboardPage() {
         setError(`No team found for department ${playerForm.department}. Please create a team for this department first.`);
         return;
       }
-
+  
       // Validate that team._id exists
       if (!team._id) {
         setError(`Invalid team ID for department ${playerForm.department}. Please check the team configuration.`);
         return;
       }
-
-      // Validate jersey number
+  
+      // Validate jersey number (00-599)
       const jerseyNumber = parseInt(playerForm.jerseyNumber);
-      if (isNaN(jerseyNumber) || jerseyNumber < 0 || jerseyNumber > 299) {
-        setError("Please enter a valid jersey number between 1 and 99");
+      if (isNaN(jerseyNumber) || jerseyNumber < 0 || jerseyNumber > 599) {
+        setError("Please enter a valid jersey number between 00 and 599");
         return;
       }
-
+  
+      // Check for duplicate jersey number in the same department
+      const duplicatePlayer = players.find(p => {
+        const pTeamId = typeof p.team === "object" ? p.team._id : p.team;
+        const currentTeamId = team._id;
+        return p.jerseyNumber === jerseyNumber && pTeamId === currentTeamId && p._id !== editingPlayer?._id;
+      });
+  
+      if (duplicatePlayer) {
+        setError(`Jersey number ${jerseyNumber} is already taken by another player in ${team.name}`);
+        return;
+      }
+  
       const playerData = {
         name: playerForm.name.trim(),
         position: playerForm.position.trim(),
@@ -484,10 +496,10 @@ export default function AdminDashboardPage() {
         team: team._id,
         jerseyNumber: jerseyNumber,
       };
-
+  
       console.log("Creating player with data:", playerData);
       console.log("Selected team:", team);
-
+  
       if (editingPlayer) {
         await apiFetch(`/players/${editingPlayer._id}`, {
           method: "PUT",
@@ -514,7 +526,6 @@ export default function AdminDashboardPage() {
       setSuccess(editingPlayer ? "Player updated successfully!" : "Player created successfully!");
     } catch (err: any) {
       console.error("Error saving player:", err);
-      // apiFetch already extracts the error message from the response
       setError(err.message || "Failed to save player");
     }
   }
@@ -1468,8 +1479,10 @@ export default function AdminDashboardPage() {
                       id="player-jersey"
                       className="input"
                       type="number"
-                      min="1"
-                      max="99"
+                      min="0"
+                      max="599"
+                      step="1"
+                      placeholder="Enter 000-599"
                       value={playerForm.jerseyNumber}
                       onChange={(e) =>
                         setPlayerForm({
@@ -1479,6 +1492,9 @@ export default function AdminDashboardPage() {
                       }
                       required
                     />
+                    <p className="muted" style={{ fontSize: "0.75rem", marginTop: "0.25rem" }}>
+                      Enter a number between 00 and 599
+                    </p>
                   </div>
                   
                   <div className="field">
