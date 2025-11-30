@@ -472,7 +472,7 @@ export default function AdminDashboardPage() {
 
       // Validate jersey number
       const jerseyNumber = parseInt(playerForm.jerseyNumber);
-      if (isNaN(jerseyNumber) || jerseyNumber < 1 || jerseyNumber > 99) {
+      if (isNaN(jerseyNumber) || jerseyNumber < 0 || jerseyNumber > 299) {
         setError("Please enter a valid jersey number between 1 and 99");
         return;
       }
